@@ -435,12 +435,9 @@
   let unreadTotal = $derived(
     countedRooms.reduce((total, room) => total + roomList.notificationsFor(room).highlight, 0)
   );
-  let notifyingTotal = $derived(
-    countedRooms.reduce((total, room) => total + (roomList.badgeUnreadFor(room).notifying ?? 0), 0)
-  );
 
   $effect(() => {
-    void setUnreadBadge(notifyingTotal);
+    void setUnreadBadge(roomList.appBadge);
   });
 
   let answeredCallRoom = $state<string | null>(null);
@@ -1005,7 +1002,7 @@
   });
 
   $effect(() => {
-    if (roomList.settled) spaceNotifications.apply(roomList.rooms);
+    if (roomList.settled) spaceNotifications.apply(roomList);
   });
 
   const LEFT_CONVERSATIONS_SETTLE_MS = 2_000;

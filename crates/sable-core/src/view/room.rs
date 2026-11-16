@@ -548,6 +548,29 @@ pub(crate) async fn room_avatar_url(room: &Room) -> Option<String> {
     }
 }
 
+/// An `m.direct` room that grew past two people is a group, even if the
+/// `m.direct` entry still names one of them.
+pub(crate) fn is_one_to_one(room: &Room) -> bool {
+    let service = room.active_service_members_count().unwrap_or_else(|| {
+        room.service_members()
+            .map_or(0, |members| members.len() as u64)
+    });
+    room.active_members_count().saturating_sub(service) <= 2
+}
+
+pub(crate) const DIRECT_PARTNER_EVENT: &str = "moe.sable.direct_partner";
+
+/// The person `/converttodm` was given, so a direct room with more people in it
+/// still goes by them.
+pub(crate) async fn chosen_partner(room: &Room) -> Option<OwnedUserId> {
+    let raw = room
+        .account_data(DIRECT_PARTNER_EVENT.into())
+        .await
+        .ok()??;
+    let content = raw.get_field::<serde_json::Value>("content").ok()??;
+    OwnedUserId::try_from(content.get("user_id")?.as_str()?).ok()
+}
+
 async fn direct_peer(room: &Room) -> Option<RoomMember> {
     let service_members = room.service_members().unwrap_or_default();
     let targets: Vec<OwnedUserId> = room
@@ -559,6 +582,9 @@ async fn direct_peer(room: &Room) -> Option<RoomMember> {
     let [target] = targets.as_slice() else {
         return None;
     };
+    if !is_one_to_one(room) && chosen_partner(room).await.as_ref() != Some(target) {
+        return None;
+    }
     room.get_member_no_sync(target)
         .await
         .ok()

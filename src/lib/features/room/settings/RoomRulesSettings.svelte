@@ -72,7 +72,9 @@
   );
   let savedText = $derived(bioContent(saved.html));
   let text = $derived(savedText);
-  let requireAcceptance = $derived(saved.require_acceptance);
+  // The switch shows off without text, so stored acceptance alone must not count as an edit.
+  let savedRequired = $derived(saved.require_acceptance && saved.html !== '');
+  let requireAcceptance = $derived(savedRequired);
   let delegate = $derived(saved.delegate_to ?? NO_DELEGATE);
   let notify = $state(false);
   let saving = $state(false);
@@ -80,7 +82,7 @@
   let failed = $state(false);
 
   let delegates = $derived.by(() => {
-    const ids = roomId === null ? [] : ancestorSpaceIds(roomList.rooms, roomId);
+    const ids = roomId === null ? [] : ancestorSpaceIds(roomList.roomSpaces(roomId));
     if (saved.delegate_to !== null && !ids.includes(saved.delegate_to)) ids.push(saved.delegate_to);
     return [
       { value: NO_DELEGATE, label: i18n.t('room.rulesDelegateNone') },
@@ -94,14 +96,12 @@
   );
   let canNotify = $derived(saved.html !== '' && textChanged && required);
   let dirty = $derived(
-    textChanged ||
-      required !== saved.require_acceptance ||
-      delegate !== (saved.delegate_to ?? NO_DELEGATE)
+    textChanged || required !== savedRequired || delegate !== (saved.delegate_to ?? NO_DELEGATE)
   );
 
   let isSpace = $derived(room?.room_kind === 'space');
   let notice = $derived.by(() => {
-    if (required && (!saved.require_acceptance || saved.html === '')) {
+    if (required && !savedRequired) {
       return i18n.t('room.rulesSaveLocks');
     }
     return notify && canNotify ? i18n.t('room.rulesSaveAsksAgain') : null;
@@ -129,7 +129,7 @@
 
   function reset(): void {
     text = savedText;
-    requireAcceptance = saved.require_acceptance;
+    requireAcceptance = savedRequired;
     delegate = saved.delegate_to ?? NO_DELEGATE;
     notify = false;
     touched();

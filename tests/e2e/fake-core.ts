@@ -665,6 +665,8 @@ export async function installFakeCore(page: Page, mode: WorkerMode): Promise<voi
           .filter((entry) => entry.counts.unread > 0 || entry.counts.highlight > 0)
           .map((entry) => ({ room_id: entry.room_id, counts: entry.counts })),
         quiet_rooms: [],
+        app_badge: null,
+        room_spaces: null,
       };
     }
 
@@ -1122,6 +1124,8 @@ export async function installFakeCore(page: Page, mode: WorkerMode): Promise<voi
       'messages.bulk_redact': () => 0,
       'messages.delete_thread': () => null,
       'messages.reaction_shortcodes': () => [],
+      'messages.reaction_event_ids': () => [],
+      'messages.redact_reaction': () => null,
       'messages.frequent_reactions': () => [],
       'calendar.entries': () => ({ entries: [], rsvps: [] }),
       'messages.url_preview': (params) =>

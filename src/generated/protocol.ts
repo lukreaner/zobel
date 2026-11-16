@@ -192,6 +192,12 @@ export type CallSupportView = {
 	can_join: boolean,
 };
 
+/**  A child and the order string it carries or should carry. */
+export type ChildOrder = {
+	roomId: string,
+	order: string | null,
+};
+
 export type ChildOrderOverride = {
 	parent_id: string,
 	children: SpaceChildEdge[],
@@ -841,6 +847,11 @@ export type PackTargetView = { kind: "room"; room_id: string; state_key: string 
 export type PaginationDirection = "backward" | "forward";
 
 export type ParameterSchema = { schema_type: "primitive"; type: PrimitiveType } | { schema_type: "literal"; value: LiteralValue } | { schema_type: "union"; variants: ScalarSchema[] } | { schema_type: "array"; items: ItemSchema };
+
+export type ParentSpace = {
+	space_id: string,
+	via: string[],
+};
 
 export type ParsedQuery = {
 	text: string,
@@ -1514,15 +1525,33 @@ export type RoomSectionView = {
 	descendants: string[],
 };
 
-/**  Changed sections only. `badges` and `quiet_rooms` are whole when present. */
+/**  Changed sections only. `badges`, `quiet_rooms` and `room_spaces` are whole when present. */
 export type RoomSectionsUpdate = {
 	sections: RoomSectionView[],
 	removed: string[],
 	badges: RoomBadgeView[] | null,
 	quiet_rooms: string[] | null,
+	app_badge: number | null,
+	room_spaces: RoomSpacesView[] | null,
 };
 
 export type RoomSortView = "recent" | "name-asc" | "name-desc";
+
+/**  Where a room sits in the spaces this account has joined. */
+export type RoomSpacesView = {
+	room_id: string,
+	joined: boolean,
+	/**  The joined spaces above the room, the nearest level first. */
+	levels: string[][],
+	/**  The top-level space the room sits under, which tells apart rooms sharing a name. */
+	root_name: string | null,
+	/**  The first joined space listing the room, and the `via` of its edge. */
+	parent: ParentSpace | null,
+	/**  Every space holding the room at any depth, whatever its state. */
+	containing: string[],
+	/**  Every joined room and subspace below a joined space, nearest first. */
+	descendants: string[],
+};
 
 export type RoomStateEventView = {
 	state_key: string,
@@ -1941,6 +1970,12 @@ export type SpaceHierarchyRoomView = {
 	children: SpaceChildEdge[],
 };
 
+export type SpaceLeaveOrder = {
+	order: string[],
+	room_count: number,
+	subspace_count: number,
+};
+
 export type SpaceNotificationView = {
 	space_id: string,
 	mode: NotificationModeView,
@@ -1954,6 +1989,21 @@ export type SpaceNotificationsView = {
 export type SpaceParentView = {
 	room_id: string,
 	via: string[],
+};
+
+/**  A room as the web page sends it, with what a lobby shows of it. */
+export type SpaceRoomInput = {
+	room_id: string,
+	display_name: string,
+	is_space: boolean,
+	joined: boolean,
+	tombstoned: boolean,
+	children: SpaceChildEdge[],
+	canonical_alias: string | null,
+	name: string | null,
+	topic: string | null,
+	avatar_url: string | null,
+	join_rule: RoomJoinRuleView,
 };
 
 export type SpaceTreeNodeView = { kind: "room"; room_id: string; key: string; depth: number } | { kind: "category"; room_id: string; key: string; depth: number; children: SpaceTreeNodeView[] } | { kind: "link"; room_id: string; key: string; depth: number };
@@ -2342,6 +2392,9 @@ export type Rpc = {
     userProfile: (params: {
 	user_id: string,
 }) => Promise<ProfileView>;
+    userProfileSource: (params: {
+	user_id: string,
+}) => Promise<string>;
     userRelations: (params: {
 	user_id: string,
 }) => Promise<{
@@ -3020,6 +3073,18 @@ export type Rpc = {
 	room_id: string,
 	event_id: string,
 }) => Promise<ReactionShortcodeView[]>;
+    reactionEventIds: (params: {
+	room_id: string,
+	event_id: string,
+	key: string,
+	sender: string,
+}) => Promise<string[]>;
+    redactReaction: (params: {
+	room_id: string,
+	event_id: string,
+	key: string,
+	sender: string,
+}) => Promise<null>;
     frequentReactions: (params: {
 	legacy?: unknown | null,
 	recent?: string[],
@@ -3802,6 +3867,7 @@ export type RpcResult<M extends RpcMethod> = Awaited<ReturnType<M>>;
 export type RpcMethods = {
   'account.set_read_receipts': Rpc['account']['setReadReceipts'];
   'account.user_profile': Rpc['account']['userProfile'];
+  'account.user_profile_source': Rpc['account']['userProfileSource'];
   'account.user_relations': Rpc['account']['userRelations'];
   'account.well_known': Rpc['account']['wellKnown'];
   'account.data_types': Rpc['account']['dataTypes'];
@@ -3950,6 +4016,8 @@ export type RpcMethods = {
   'messages.send_gesture': Rpc['messages']['sendGesture'];
   'messages.url_preview': Rpc['messages']['urlPreview'];
   'messages.reaction_shortcodes': Rpc['messages']['reactionShortcodes'];
+  'messages.reaction_event_ids': Rpc['messages']['reactionEventIds'];
+  'messages.redact_reaction': Rpc['messages']['redactReaction'];
   'messages.frequent_reactions': Rpc['messages']['frequentReactions'];
   'messages.remember_emoji': Rpc['messages']['rememberEmoji'];
   'messages.set_typing': Rpc['messages']['setTyping'];
@@ -4147,6 +4215,7 @@ export function createRpc(call: RpcCall): Rpc {
     account: {
       setReadReceipts: (params) => call('account.set_read_receipts', params) as ReturnType<Rpc['account']['setReadReceipts']>,
       userProfile: (params) => call('account.user_profile', params) as ReturnType<Rpc['account']['userProfile']>,
+      userProfileSource: (params) => call('account.user_profile_source', params) as ReturnType<Rpc['account']['userProfileSource']>,
       userRelations: (params) => call('account.user_relations', params) as ReturnType<Rpc['account']['userRelations']>,
       wellKnown: (params = {}) => call('account.well_known', params) as ReturnType<Rpc['account']['wellKnown']>,
       dataTypes: (params = {}) => call('account.data_types', params) as ReturnType<Rpc['account']['dataTypes']>,
@@ -4307,6 +4376,8 @@ export function createRpc(call: RpcCall): Rpc {
       sendGesture: (params) => call('messages.send_gesture', params) as ReturnType<Rpc['messages']['sendGesture']>,
       urlPreview: (params) => call('messages.url_preview', params) as ReturnType<Rpc['messages']['urlPreview']>,
       reactionShortcodes: (params) => call('messages.reaction_shortcodes', params) as ReturnType<Rpc['messages']['reactionShortcodes']>,
+      reactionEventIds: (params) => call('messages.reaction_event_ids', params) as ReturnType<Rpc['messages']['reactionEventIds']>,
+      redactReaction: (params) => call('messages.redact_reaction', params) as ReturnType<Rpc['messages']['redactReaction']>,
       frequentReactions: (params) => call('messages.frequent_reactions', params) as ReturnType<Rpc['messages']['frequentReactions']>,
       rememberEmoji: (params) => call('messages.remember_emoji', params) as ReturnType<Rpc['messages']['rememberEmoji']>,
       setTyping: (params) => call('messages.set_typing', params) as ReturnType<Rpc['messages']['setTyping']>,

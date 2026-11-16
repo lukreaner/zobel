@@ -69,7 +69,7 @@
   import RoomPresencePrompt from './RoomPresencePrompt.svelte';
   import RoomRulesBanner from './RoomRulesBanner.svelte';
   import RoomRulesDialog from './RoomRulesDialog.svelte';
-  import { RoomRules } from './room-rules.svelte.js';
+  import { RoomRules, provideRoomRulesOpener } from './room-rules.svelte.js';
   import RoomTombstoneBanner from './RoomTombstoneBanner.svelte';
   import RoomReadReceipts from './timeline/RoomReadReceipts.svelte';
   import TimelineList from './timeline/TimelineList.svelte';
@@ -134,7 +134,7 @@
     personas,
     timeline,
     roomId: () => resolvedRoomId,
-    spaceIds: (id) => personaSpaces(roomList.rooms, id, page.params.spaceId).order,
+    spaceIds: (id) => personaSpaces(roomList, id, page.params.spaceId).order,
     encrypted: () => resolvedRoom?.encrypted ?? null,
     publicRoom: () => resolvedRoom?.join_rule === 'public',
     beforeSend: () => timelineList?.resumeLive() ?? resumeLive(),
@@ -300,6 +300,9 @@
   });
 
   const rules = new RoomRules(core.rpc);
+  provideRoomRulesOpener(() => {
+    if (rules.view) rules.open = true;
+  });
   let callParticipants = $derived(resolvedRoom?.call_participants ?? []);
   let callable = $derived(
     !call.active &&
@@ -415,7 +418,7 @@
     void cosmetics.load(resolvedRoomId, cosmeticsSpaceId);
   });
 
-  let ancestorSpaceKey = $derived(ancestorSpaceIds(roomList.rooms, resolvedRoomId).join(','));
+  let ancestorSpaceKey = $derived(ancestorSpaceIds(roomList.roomSpaces(resolvedRoomId)).join(','));
 
   $effect(() => {
     void abbreviationChanges.version;
@@ -1017,6 +1020,7 @@
     {roomAvatar}
     topic={roomTopic}
     encrypted={resolvedRoom?.encrypted ?? null}
+    publicRoom={resolvedRoom?.join_rule === 'public'}
     presence={dmPresence?.presence ?? null}
     isVoice={resolvedRoom?.room_kind === 'voice'}
     callParticipants={resolvedRoom?.call_participants ?? []}
