@@ -1,7 +1,7 @@
 {
-  "name": "Sable",
-  "short_name": "Sable",
-  "description": "An almost stable Matrix client",
+  "name": "Zobel",
+  "short_name": "Zobel",
+  "description": "A Matrix client, based on Sable",
   "id": "/",
   "start_url": "/",
   "scope": "/",

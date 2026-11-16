@@ -6,7 +6,7 @@
   import { resolve } from '$app/paths';
 
   import { appName } from '#lib/deployment/brand.js';
-  import { DEFAULT_APP_NAME } from '#lib/deployment/default-app-name.js';
+  import { UPSTREAM_APP_NAME } from '#lib/deployment/default-app-name.js';
   import { donateUrl, sourceUrl } from '#lib/deployment/links.js';
   import { useCoreClient } from '#lib/core/context.js';
   import { restartSetup } from '#lib/features/auth/setup/setup-record.js';
@@ -149,7 +149,7 @@
           {/snippet}
         </Tooltip>
       </div>
-      {#if appName() !== DEFAULT_APP_NAME}
+      {#if appName() !== UPSTREAM_APP_NAME}
         <p>{i18n.t('settings.aboutPoweredBy')}</p>
       {/if}
       <p>{i18n.t('settings.aboutTagline')} 🇵🇸 🇺🇦 🏳️‍⚧️</p>

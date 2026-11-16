@@ -23,7 +23,7 @@ test('a waiting web bundle is announced in the browser', async () => {
   await tick();
 
   expect(
-    screen.getByText(i18n.t('settings.webUpdateAlertBody', { appName: 'Sable' }))
+    screen.getByText(i18n.t('settings.webUpdateAlertBody', { appName: 'Zobel' }))
   ).toBeInTheDocument();
 });
 
@@ -35,6 +35,6 @@ test('the desktop app leaves updates to its own alert', async () => {
   await tick();
 
   expect(
-    screen.queryByText(i18n.t('settings.webUpdateAlertBody', { appName: 'Sable' }))
+    screen.queryByText(i18n.t('settings.webUpdateAlertBody', { appName: 'Zobel' }))
   ).toBeNull();
 });

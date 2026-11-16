@@ -40,14 +40,14 @@ test('setAppName re-runs t() reads that use {{appName}}', () => {
 
   try {
     flushSync();
-    expect(seen.at(-1)).toBe('Welcome to Sable');
+    expect(seen.at(-1)).toBe('Welcome to Zobel');
 
     setAppName('Acme');
     flushSync();
     expect(seen.at(-1)).toBe('Welcome to Acme');
   } finally {
     stop();
-    setAppName('Sable');
+    setAppName('Zobel');
   }
 });
 

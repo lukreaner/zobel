@@ -78,7 +78,7 @@ async function pushers(count: number): Promise<HTMLElement[]> {
   return screen.getAllByRole('listitem');
 }
 
-test('lists registered pushers and marks the Sable ones', async () => {
+test('lists registered pushers and marks the Zobel ones', async () => {
   push.webPushers.mockResolvedValue([gateway, ownServer, unnamed]);
 
   const [phone, browser, email] = await pushers(3);
@@ -90,7 +90,7 @@ test('lists registered pushers and marks the Sable ones', async () => {
     within(phone).getByRole('button', { name: 'Copy the push provider URL' })
   ).toHaveTextContent('https://ntfy.example.org/_matrix/push/v1/notify');
   expect(within(phone).getByText('Push provider')).toBeInTheDocument();
-  expect(within(browser).getByText('Sable')).toHaveClass('status-badge-neutral');
+  expect(within(browser).getByText('Zobel')).toHaveClass('status-badge-neutral');
   expect(screen.queryByText('This device')).not.toBeInTheDocument();
   expect(within(browser).getByText('Awaiting confirmation')).toHaveClass('status-badge-warning');
 });

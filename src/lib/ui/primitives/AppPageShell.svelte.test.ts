@@ -23,5 +23,5 @@ test('titles the document after the page', async () => {
   render(AppPageShell, { title: 'Developer' });
   await tick();
 
-  expect(document.title).toBe('Developer - Sable');
+  expect(document.title).toBe('Developer - Zobel');
 });

@@ -34,11 +34,11 @@ const acme = parseRuntimeConfig({
   auth: { disableRegistration: true },
 });
 
-test('an unbranded deployment is Sable', () => {
-  expect(appName(sable)).toBe('Sable');
-  expect(pageTitle('Settings', sable)).toBe('Settings - Sable');
-  expect(pageTitle('', sable)).toBe('Sable');
-  expect(deviceDisplayName(sable)).toBe('Sable on Android');
+test('an unbranded deployment is Zobel', () => {
+  expect(appName(sable)).toBe('Zobel');
+  expect(pageTitle('Settings', sable)).toBe('Settings - Zobel');
+  expect(pageTitle('', sable)).toBe('Zobel');
+  expect(deviceDisplayName(sable)).toBe('Zobel on Android');
   expect(privacyUrl(sable)).toBe(SABLE_PRIVACY_URL);
   expect(registrationEnabled(sable)).toBe(true);
 });
@@ -62,7 +62,7 @@ test('hiding community links keeps the deployment support room', () => {
 
 test('a nightly build says so in the device name', () => {
   build.nightly = true;
-  expect(deviceDisplayName(sable)).toBe('Sable (Nightly) on Android');
+  expect(deviceDisplayName(sable)).toBe('Zobel (Nightly) on Android');
   build.nightly = false;
 });
 

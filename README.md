@@ -1,3 +1,12 @@
+# Zobel
+
+Zobel is a Matrix client forked from [Sable](https://git.sable.moe/SableClient/sable-next). "Zobel" is the German word for sable. Like Sable, it is licensed under AGPL-3.0-or-later.
+
+> [!NOTE]
+> This fork is at an early stage. Everything below this note is still Sable's README: the download links, hosted instances and community rooms belong to the upstream project, not to Zobel.
+
+---
+
 # <img src="src/lib/assets/res/svg/logo.svg" alt="Sable" width="32" height="32"> Sable
 
 An almost stable Matrix client, written from scratch in Rust and Svelte.  

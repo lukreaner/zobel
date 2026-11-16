@@ -381,12 +381,12 @@ test('uses the configured device name', () => {
   const session = { account_id: 'a', device_id: 'LAPTOP' };
   const own = (display_name: string | null) => ({ is_own: true, display_name });
 
-  expect(pusherDisplayName({ session, deviceList: [] } as unknown as CoreClient)).toBe('Sable');
+  expect(pusherDisplayName({ session, deviceList: [] } as unknown as CoreClient)).toBe('Zobel');
   expect(
     pusherDisplayName({ session, deviceList: [own('Work Firefox')] } as unknown as CoreClient)
   ).toBe('Work Firefox');
   expect(pusherDisplayName({ session, deviceList: [own('  ')] } as unknown as CoreClient)).toBe(
-    'Sable'
+    'Zobel'
   );
 });
 
@@ -394,7 +394,7 @@ test('updates the pusher after a device rename', async () => {
   mocks.activeServiceWorker.mockResolvedValue(registration(SERVER_KEY));
   await syncPushSubscription(client, NONE);
   expect(commandsOf.setWebPusher).toHaveBeenLastCalledWith({
-    pusher: expect.objectContaining({ device_display_name: 'Sable' }) as unknown,
+    pusher: expect.objectContaining({ device_display_name: 'Zobel' }) as unknown,
   });
 
   Object.assign(client, { deviceList: [{ is_own: true, display_name: 'Work Firefox' }] });

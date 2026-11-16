@@ -5,7 +5,8 @@ import type { RuntimeConfig } from '#lib/config/runtime-config.js';
 
 import { deployment } from './deployment.js';
 
-const SABLE_SOURCE_URL = 'https://git.sable.moe/SableClient/sable-next';
+// AGPL: the source link must lead to this fork's code, not upstream's.
+const SOURCE_URL = 'https://github.com/lukreaner/zobel';
 const SABLE_DONATE_URL = 'https://opencollective.com/sable';
 const SABLE_SUPPORT_ROOM = '#general:sable.moe';
 const SABLE_FEATURES_ROOM = '#features:sable.moe';
@@ -24,7 +25,7 @@ function community<T>(value: T, config: RuntimeConfig): T | null {
 }
 
 export function sourceUrl(config: RuntimeConfig = deployment()): string | null {
-  return community(SABLE_SOURCE_URL, config);
+  return community(SOURCE_URL, config);
 }
 
 export function donateUrl(config: RuntimeConfig = deployment()): string | null {

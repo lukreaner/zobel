@@ -60,6 +60,6 @@ test('rejects a file that is not a settings file', async () => {
   render(SettingsFile);
   await choose(JSON.stringify({ 'moe.sable.next.workspace': { v: 1, settings: {} } }));
 
-  expect(await screen.findByText(/not a Sable settings file/)).toBeInTheDocument();
+  expect(await screen.findByText(/not a Zobel settings file/)).toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

@@ -29,7 +29,7 @@ test('package-managed builds announce updates without offering to install them',
 
   expect(
     await screen.findByText(
-      'A newer version is available. Update Sable through your package manager.'
+      'A newer version is available. Update Zobel through your package manager.'
     )
   ).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument();
