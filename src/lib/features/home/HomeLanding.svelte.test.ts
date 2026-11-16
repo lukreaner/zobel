@@ -33,7 +33,6 @@ test.each(['web', 'ios'])('donation links on %s', (platform) => {
   vi.mocked(isTauri).mockReturnValue(native);
   render(HomeLanding, { titleKey: 'nav.unspaced' });
 
-  expect(screen.getByRole('link', { name: 'Get support' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View source' })).toBeInTheDocument();
   if (native) {
     expect(screen.queryByRole('link', { name: 'Donate' })).not.toBeInTheDocument();
@@ -45,27 +44,18 @@ test.each(['web', 'ios'])('donation links on %s', (platform) => {
 test('names the resource links as a group', () => {
   render(HomeLanding, { titleKey: 'nav.unspaced' });
 
-  const group = screen.getByRole('group', { name: 'Sable resources' });
-  expect(within(group).getByRole('link', { name: 'Get support' })).toBeInTheDocument();
+  const group = screen.getByRole('group', { name: 'Zobel resources' });
+  expect(within(group).getByRole('link', { name: 'View source' })).toHaveAttribute(
+    'href',
+    'https://github.com/lukreaner/zobel'
+  );
 });
 
-test('opens Get support in the Sable general room', () => {
+test('does not send people to the rooms of the Sable community', () => {
   render(HomeLanding, { titleKey: 'nav.unspaced' });
 
-  expect(screen.getByRole('link', { name: 'Get support' })).toHaveAttribute(
-    'href',
-    '/to/%23general%3Asable.moe'
-  );
-  expect(screen.getByRole('link', { name: 'Get support' })).not.toHaveAttribute('target');
-});
-
-test('opens Vote on features in the Sable features room', () => {
-  render(HomeLanding, { titleKey: 'nav.unspaced' });
-
-  expect(screen.getByRole('link', { name: 'Vote on features' })).toHaveAttribute(
-    'href',
-    '/to/%23features%3Asable.moe'
-  );
+  expect(screen.queryByRole('link', { name: 'Get support' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Vote on features' })).not.toBeInTheDocument();
 });
 
 test('drops the resources section when the deployment hides community links', () => {
@@ -75,7 +65,7 @@ test('drops the resources section when the deployment hides community links', ()
   expect(screen.queryByRole('link', { name: 'Get support' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Vote on features' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'View source' })).not.toBeInTheDocument();
-  expect(screen.queryByLabelText('Sable resources')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Zobel resources')).not.toBeInTheDocument();
 });
 
 test('keeps the deployment support room when community links are hidden', () => {

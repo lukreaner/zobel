@@ -8,11 +8,12 @@ import { deployment } from './deployment.js';
 // AGPL: the source link must lead to this fork's code, not upstream's.
 const SOURCE_URL = 'https://github.com/lukreaner/zobel';
 const SABLE_DONATE_URL = 'https://opencollective.com/sable';
-const SABLE_SUPPORT_ROOM = '#general:sable.moe';
-const SABLE_FEATURES_ROOM = '#features:sable.moe';
+// Zobel has no community rooms yet, and Sable's rooms are for Sable's own client.
+const SABLE_SUPPORT_ROOM: string | null = null;
+const SABLE_FEATURES_ROOM: string | null = null;
 export const SABLE_PRIVACY_URL = 'https://sable.moe/privacy';
 export const SABLE_UPDATE_MANIFEST_URL =
-  'https://git.sable.moe/SableClient/sable-next/releases/download/latest/latest.json';
+  'https://github.com/lukreaner/zobel/releases/latest/download/latest.json';
 
 export type PolicyLink = { text: string; url: string };
 

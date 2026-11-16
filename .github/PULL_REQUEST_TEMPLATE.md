@@ -1,4 +1,4 @@
-<!-- Please read https://git.sable.moe/SableClient/sable-next/src/branch/main/CONTRIBUTING.md before opening a pull request -->
+<!-- Please read https://github.com/lukreaner/zobel/blob/main/CONTRIBUTING.md before opening a pull request -->
 
 ### Description
 
@@ -14,12 +14,7 @@ Fixes #
 
 ### Checklist
 
-- [ ] `mise run ci` and `pnpm test:e2e` pass locally
+- [ ] The tests for the changed code pass locally
 - [ ] Tests cover the changed behavior
 - [ ] Documentation updated where it applies
-- [ ] Any change to storage, authentication, or native capabilities is explained above
-
-### Certificate of origin
-
-- [ ] Every commit is signed off (`git commit -s`), certifying the [DCO](https://git.sable.moe/SableClient/sable-next/src/branch/main/DCO)
-- [ ] No part of this contribution came from an AI content generator ([policy](https://git.sable.moe/SableClient/sable-next/src/branch/main/CONTRIBUTING.md#ai-generated-content))
+- [ ] The change is small where it touches Sable's files, so that Sable's updates keep merging ([how](https://github.com/lukreaner/zobel/blob/main/docs/zobel.md))

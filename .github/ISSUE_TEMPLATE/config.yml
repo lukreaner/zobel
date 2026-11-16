@@ -1,4 +1,5 @@
+blank_issues_enabled: true
 contact_links:
-  - name: Matrix Chat
-    url: https://link.sable.moe/#/#sable:sable.moe
-    about: Ask questions and talk to other Sable users and the maintainers
+  - name: Sable (upstream project)
+    url: https://git.sable.moe/SableClient/sable-next
+    about: Zobel is a fork of Sable. Questions about Sable itself belong with the Sable project.

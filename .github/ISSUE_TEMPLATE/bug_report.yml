@@ -1,17 +1,16 @@
 name: Bug Report
 description: Report a bug
-labels: [bug/unconfirmed]
+labels: [bug]
 
 body:
   - type: markdown
     attributes:
       value: |
         ## First of all
-        1. Please search for [existing issues](https://git.sable.moe/SableClient/sable-next/issues) about this problem first.
-        2. Make sure Sable is up to date.
-        3. Make sure it's an issue with Sable and not something else you are using.
-        4. Remember to be friendly. The [Code of Conduct](https://git.sable.moe/SableClient/sable-next/src/branch/main/CODE_OF_CONDUCT.md) applies in issues too.
-        5. If this is a security vulnerability, email security@sable.moe instead of opening a public issue.
+        1. Please search for [existing issues](https://github.com/lukreaner/zobel/issues) about this problem first.
+        2. Make sure Zobel is up to date.
+        3. Zobel is a fork of [Sable](https://git.sable.moe/SableClient/sable-next). If you know the problem also happens in Sable itself, please say so.
+        4. If this is a security vulnerability, do not open a public issue. Use [private vulnerability reporting](https://github.com/lukreaner/zobel/security/advisories/new) instead.
 
   - type: textarea
     id: description
@@ -53,10 +52,10 @@ body:
     id: info
     attributes:
       label: Environment and versions
-      description: 'Provide the build and Sable version you are using, your browser if applicable, and your homeserver.'
+      description: 'Provide the build and Zobel version you are using, your browser if applicable, and your homeserver.'
       placeholder: |
-        1. Build: [e.g. next.sable.moe, or the desktop/mobile app]
-        2. Sable version: [e.g. 0.1.0]
+        1. Build: [e.g. the web app, or the desktop/mobile app]
+        2. Zobel version: [e.g. 26.11.0]
         3. Browser: [e.g. Chrome 140, Firefox 142 — web builds only]
         4. Matrix homeserver: [e.g. matrix.org]
     validations:

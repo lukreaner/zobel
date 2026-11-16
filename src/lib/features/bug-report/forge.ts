@@ -1,3 +1,4 @@
+import { appName } from '#lib/deployment/brand.js';
 import { bugReportUrl, communityFeatures } from '#lib/deployment/links.js';
 import { openExternalUrl, opensExternalUrls } from '#lib/platform/external-links.js';
 
@@ -9,12 +10,13 @@ export interface ForgeIssue {
   html_url: string;
 }
 
-const FORGE_ORIGIN = 'https://git.sable.moe';
-const FORGE_REPO = 'SableClient/sable-next';
+// Zobel's tracker is GitHub Issues, not Sable's Forgejo.
+const FORGE_ORIGIN = 'https://github.com';
+const FORGE_REPO = 'lukreaner/zobel';
 
 const TEMPLATES: Record<ReportType, string> = {
-  bug: '.github/ISSUE_TEMPLATE/bug_report.yml',
-  feature: '.github/ISSUE_TEMPLATE/feature_request.yml',
+  bug: 'bug_report.yml',
+  feature: 'feature_request.yml',
 };
 
 const forgeIssuesUrl = `${FORGE_ORIGIN}/${FORGE_REPO}/issues`;
@@ -22,7 +24,7 @@ const forgeIssuesUrl = `${FORGE_ORIGIN}/${FORGE_REPO}/issues`;
 export function issueEnvironment(platform: string, video = ''): string {
   const userAgent = typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent;
   const version = `v${import.meta.env.VITE_APP_VERSION ?? 'dev'}`;
-  const environment = `- OS: ${platform}\n- Browser: ${userAgent}\n- Sable: ${version}`;
+  const environment = `- OS: ${platform}\n- Browser: ${userAgent}\n- ${appName()}: ${version}`;
   return video ? `${environment}\n- Video: ${video}` : environment;
 }
 
@@ -33,7 +35,7 @@ export function forgeIssueUrl(
 ): string {
   const params = new globalThis.URLSearchParams({ template: TEMPLATES[type], title: title.trim() });
   for (const [id, value] of Object.entries(fields)) {
-    if (value.trim() !== '') params.set(`field:${id}`, value);
+    if (value.trim() !== '') params.set(id, value);
   }
   return `${forgeIssuesUrl}/new?${params}`;
 }
@@ -56,16 +58,15 @@ export function reportIssueUrl(
 
 export async function searchForgeIssues(query: string, signal: AbortSignal): Promise<ForgeIssue[]> {
   const params = new globalThis.URLSearchParams({
-    q: query,
-    state: 'open',
-    type: 'issues',
-    limit: '5',
+    q: `${query} repo:${FORGE_REPO} is:issue is:open`,
+    per_page: '5',
   });
-  const response = await fetch(`${FORGE_ORIGIN}/api/v1/repos/${FORGE_REPO}/issues?${params}`, {
+  const response = await fetch(`https://api.github.com/search/issues?${params}`, {
+    headers: { Accept: 'application/vnd.github+json' },
     signal,
   });
   if (!response.ok) return [];
-  return (await response.json()) as ForgeIssue[];
+  return ((await response.json()) as { items?: ForgeIssue[] }).items ?? [];
 }
 
 export async function openForgeIssueUrl(url: string): Promise<void> {

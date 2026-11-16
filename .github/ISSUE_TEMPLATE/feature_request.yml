@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please search for [existing issues](https://git.sable.moe/SableClient/sable-next/issues) before suggesting a feature.
+        Please search for [existing issues](https://github.com/lukreaner/zobel/issues) before suggesting a feature.
 
   - type: textarea
     id: problem

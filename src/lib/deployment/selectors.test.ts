@@ -75,7 +75,7 @@ test.each(['ios', 'android', 'macos', 'windows', 'linux'] as const)(
     expect(donateUrl(sable)).toBe(os === 'ios' ? null : 'https://opencollective.com/sable');
     expect(donateUrl(acme)).toBeNull();
     expect(sourceUrl(sable)).not.toBeNull();
-    expect(supportRoom(sable)).toBe('#general:sable.moe');
+    expect(supportRoom(sable)).toBeNull();
   }
 );
 
