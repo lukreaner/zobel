@@ -14,7 +14,7 @@ Zobel is at an early stage.
 
 ## Running it
 
-You need Node.js 24, [pnpm](https://pnpm.io), Rust with the `wasm32-unknown-unknown` target, `wasm-bindgen` and `wasm-opt`. [mise](https://mise.jdx.dev) installs all of them in the versions this repository pins:
+You need Node.js 24, [pnpm](https://pnpm.io), Rust with the `wasm32-unknown-unknown` target, `wasm-bindgen`, `wasm-opt` and `clang`. [mise](https://mise.jdx.dev) installs all of them except `clang`, in the versions this repository pins:
 
 ```sh
 mise run setup   # tools and dependencies
