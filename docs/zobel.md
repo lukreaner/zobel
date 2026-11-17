@@ -26,6 +26,10 @@ git push
 Afterwards run `pnpm test src/lib/zobel`. It fails when Sable has added interface text that
 says "Sable" and nobody has decided yet whether it names the app or the Sable project.
 
+`docs/settings.md` and the two schemas in `static` are generated from the settings, Zobel's
+included. If `src/lib/config/config-reference.test.ts` fails after a merge, write them again
+with `pnpm exec vitest run -u src/lib/config/config-reference.test.ts`.
+
 ## Files Zobel owns
 
 The sync script keeps Zobel's version of these and drops Sable's changes to them:
@@ -43,15 +47,23 @@ only in Zobel, so they never conflict.
 These are the places where Zobel changes a file that Sable also maintains. Each is a few
 lines, and a conflict there is resolved by keeping Zobel's line.
 
-| File                                             | Change                                                             |
-| ------------------------------------------------ | ------------------------------------------------------------------ |
-| `src/lib/deployment/default-app-name.ts`         | The app is called Zobel                                            |
-| `src/lib/deployment/links.ts`                    | Source link and update feed point to Zobel; no community rooms     |
-| `src/lib/features/bug-report/forge.ts`           | Bug reports go to Zobel's GitHub issues                            |
-| `src/lib/features/settings/AboutSettings.svelte` | "Powered by Sable." is always shown                                |
-| `src/lib/i18n.ts`                                | Passes each language through `src/lib/zobel/app-name-in-locale.ts` |
-| `src/app.html`, `static/manifest.webmanifest`    | Name of the installed web app                                      |
-| Tests next to these files                        | Expect "Zobel" where they expected "Sable"                         |
+| File                                                        | Change                                                         |
+| ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `src/lib/deployment/default-app-name.ts`                    | The app is called Zobel                                        |
+| `src/lib/deployment/links.ts`                               | Source link and update feed point to Zobel; no community rooms |
+| `src/lib/features/bug-report/forge.ts`                      | Bug reports go to Zobel's GitHub issues                        |
+| `src/lib/features/settings/AboutSettings.svelte`            | "Powered by Sable." is always shown                            |
+| `src/lib/i18n.ts`                                           | Passes each language through `src/lib/zobel/locale.ts`         |
+| `src/app.html`, `static/manifest.webmanifest`               | Name of the installed web app                                  |
+| `src/lib/settings/definitions.ts`                           | Adds the setting `manualReadReceipts`                          |
+| `src/lib/settings/registry/privacy.ts`                      | Lists that setting under Privacy                               |
+| `src/lib/features/room/timeline/TimelineList.svelte`        | Hands read receipts to the "Seen" button when it is on         |
+| `src/lib/features/forum/ForumPage.svelte`                   | The same for forum rooms                                       |
+| `src/lib/features/room/settings/RoomGeneralSettings.svelte` | Shows the per-chat choice for "Seen"                           |
+| `src/routes/(app)/+layout.svelte`                           | Syncs the per-chat choices                                     |
+| `docs/settings.md`, `static/*.schema.json`                  | Generated: they list the setting `manualReadReceipts`          |
+| `src/lib/config/config-reference.test.ts`                   | Reads the names of Zobel's settings for those generated files  |
+| Tests next to these files                                   | Expect "Zobel" where they expected "Sable"                     |
 
 ## Interface text
 
@@ -63,6 +75,23 @@ updates them constantly. Instead `src/lib/zobel/app-name-in-locale.ts` holds two
   name when a language loads.
 - `UPSTREAM_NAME_KEYS`: strings about the Sable project, its services, its donors or its
   themes. These keep saying Sable, because that is still true.
+
+Text that only Zobel has is not added to `src/locales` either. It lives in
+`src/lib/zobel/locales` (English and German; other languages fall back to English) under the
+key `zobel`, and `src/lib/zobel/locale.ts` adds it when a language loads.
+
+## Features only Zobel has
+
+Their code lives in `src/lib/zobel`. Sable's files only get the few lines that call it, listed
+in the table above.
+
+- **Marking chats as read by hand.** With the setting "Mark chats as read by hand" (Privacy)
+  on, opening a chat sends no read receipt. The timeline keeps the receipt it would have sent
+  and shows a "Seen" button below the messages; tapping it sends that receipt. Each chat can be
+  set apart from the setting under its own settings (General, Access). Those per-chat choices
+  sync as the account data `io.github.lukreaner.zobel.manual_read_receipts`. Marking a chat as
+  read from a menu, a notification or with Escape still works as in Sable. The code is in
+  `src/lib/zobel/manual-read-receipts.svelte.ts` and `src/lib/zobel/SeenBar.svelte`.
 
 ## What is still Sable
 

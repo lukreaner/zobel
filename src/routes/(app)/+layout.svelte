@@ -98,6 +98,7 @@
     settingsDocument,
     workspaceDocument,
   } from '#lib/settings/sync-documents.js';
+  import { manualReadReceiptsDocument } from '#lib/zobel/manual-read-receipts.svelte.js';
   import {
     registerNativePush,
     retryNativePushNow,
@@ -399,6 +400,7 @@
     workspaceDocument(spaceSidebar),
     draftsDocumentFor(core.session?.account_id ?? ''),
     scheduledDocumentFor(core.session?.account_id ?? ''),
+    manualReadReceiptsDocument,
   ]);
 
   $effect(() => {

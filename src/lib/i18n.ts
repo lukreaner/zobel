@@ -10,7 +10,7 @@ import {
 import { DEFAULT_APP_NAME } from './deployment/default-app-name.js';
 import { availableLocales, loadLocaleBundle, matchLocale, SYSTEM_LANGUAGE } from './locales.js';
 import { preferences } from './settings/preferences.svelte.js';
-import { useAppNameInLocale } from './zobel/app-name-in-locale.js';
+import { zobelLocale } from './zobel/locale.js';
 
 function chosenLanguage(): string | undefined {
   const value = preferences.language;
@@ -20,8 +20,7 @@ function chosenLanguage(): string | undefined {
 async function ensureBundle(code: string): Promise<void> {
   if (i18next.hasResourceBundle(code, 'translation')) return;
   const bundle = await loadLocaleBundle(code);
-  if (bundle)
-    i18next.addResourceBundle(code, 'translation', useAppNameInLocale(bundle), true, true);
+  if (bundle) i18next.addResourceBundle(code, 'translation', zobelLocale(code, bundle), true, true);
 }
 
 function applyLanguage(code: string): void {
@@ -42,7 +41,7 @@ i18next
     fallbackLng: 'en',
     partialBundledLanguages: true,
     resources: {
-      en: { translation: useAppNameInLocale(en) },
+      en: { translation: zobelLocale('en', en) },
     },
     interpolation: {
       escapeValue: false,

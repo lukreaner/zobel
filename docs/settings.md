@@ -152,6 +152,7 @@ except those marked deployment only.
 
 - `sendTypingNotifications` (Send typing notifications): `true` or `false`. Default `true`.
 - `sendReadReceipts` (Read receipts): `true` or `false`. Default `true`.
+- `manualReadReceipts` (Mark chats as read by hand): `true` or `false`. Default `false`.
 - `sendPresence` (Online status): `true` or `false`. Default `true`.
 - `blurMedia` (Blur media until hovered): `true` or `false`. Default `false`.
 - `blurAvatars` (Blur profile pictures until hovered): `true` or `false`. Default `false`.

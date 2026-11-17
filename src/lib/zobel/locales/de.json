@@ -1,0 +1,13 @@
+{
+  "zobel": {
+    "seen": "Gesehen",
+    "seenFailed": "Die Lesebestätigung konnte nicht gesendet werden.",
+    "manualReadReceipts": "Chats von Hand als gelesen markieren",
+    "manualReadReceiptsHint": "Ein Chat gilt nicht mehr schon beim Öffnen als gelesen. Unter den Nachrichten erscheint der Knopf „Gesehen“, und die Lesebestätigung wird erst gesendet, wenn du ihn antippst.",
+    "manualReadReceiptsTerms": "Gesehen-Knopf, Lesebestätigungen, Lesemarkierung, manuell, bestätigen",
+    "roomReadReceiptsTitle": "Von Hand als gelesen markieren",
+    "roomReadReceiptsHint": "Ist das an, gilt dieser Chat erst als gelesen, wenn du unter den Nachrichten auf „Gesehen“ tippst. Gilt nur für dich und wird mit deinen anderen Geräten abgeglichen.",
+    "roomReadReceiptsOn": "An",
+    "roomReadReceiptsOff": "Aus"
+  }
+}

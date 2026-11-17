@@ -45,6 +45,7 @@
   import RoomUpgradeSettings from './RoomUpgradeSettings.svelte';
   import { canSendState } from './permission-groups';
   import Banner from '#lib/ui/primitives/Banner.svelte';
+  import RoomReadReceiptSetting from '#lib/zobel/RoomReadReceiptSetting.svelte';
 
   interface Props {
     room: RoomListItemView | null;
@@ -413,6 +414,7 @@
         <RoomHistorySettings {room} {levels} {ownPowerLevel} />
         <RoomEncryptionSettings {room} {levels} {ownPowerLevel} />
         <RoomPresenceSettings {room} {levels} {ownPowerLevel} />
+        <RoomReadReceiptSetting {roomId} />
       {/if}
       <RoomPublishSettings {room} {levels} {ownPowerLevel} />
       <RoomSpacesSettings {room} {levels} {ownPowerLevel} />

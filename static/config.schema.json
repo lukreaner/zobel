@@ -1097,6 +1097,11 @@
           "type": "boolean",
           "default": true
         },
+        "manualReadReceipts": {
+          "title": "Mark chats as read by hand",
+          "type": "boolean",
+          "default": false
+        },
         "sendPresence": {
           "title": "Online status",
           "type": "boolean",
@@ -2591,6 +2596,11 @@
           "title": "Read receipts",
           "type": "boolean",
           "default": true
+        },
+        "manualReadReceipts": {
+          "title": "Mark chats as read by hand",
+          "type": "boolean",
+          "default": false
         },
         "sendPresence": {
           "title": "Online status",

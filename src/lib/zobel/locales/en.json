@@ -1,0 +1,13 @@
+{
+  "zobel": {
+    "seen": "Seen",
+    "seenFailed": "The read receipt could not be sent.",
+    "manualReadReceipts": "Mark chats as read by hand",
+    "manualReadReceiptsHint": "Opening a chat no longer marks it as read. A “Seen” button appears below the messages, and the read receipt is only sent once you tap it.",
+    "manualReadReceiptsTerms": "Seen button, read receipts, read marker, manual, confirm",
+    "roomReadReceiptsTitle": "Mark as read by hand",
+    "roomReadReceiptsHint": "With this on, this chat is only marked as read once you tap “Seen” below the messages. Only for you. Syncs to your other devices.",
+    "roomReadReceiptsOn": "On",
+    "roomReadReceiptsOff": "Off"
+  }
+}

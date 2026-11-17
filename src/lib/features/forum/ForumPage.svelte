@@ -49,6 +49,11 @@
   import IconButton from '#lib/ui/primitives/IconButton.svelte';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
   import { toasts } from '#lib/ui/toasts.svelte.js';
+  import {
+    HeldReadReceipt,
+    usesManualReadReceipts,
+  } from '#lib/zobel/manual-read-receipts.svelte.js';
+  import SeenBar from '#lib/zobel/SeenBar.svelte';
 
   import { filterThreads, MAX_PINNED, sortThreads, type ForumView } from './forum-threads';
   import { ForumThreads } from './forum-threads.svelte.js';
@@ -103,6 +108,8 @@
     }
     return null;
   });
+  const heldReceipt = new HeldReadReceipt();
+  let manualReceipts = $derived(usesManualReadReceipts(resolvedRoomId));
   let autoFills = 0;
   let view = $state.raw<ForumView>({
     sort: 'active',
@@ -372,7 +379,7 @@
 <TimelineReadReceipt
   timeline={forumThreads.roomTimeline}
   visibleEventId={latestEventId}
-  onRead={markRead}
+  onRead={manualReceipts ? heldReceipt.hold : markRead}
   enabled={threadRootId === null || threadInPanel}
 />
 <MessageContextMenu menu={messageMenu} />
@@ -445,6 +452,12 @@
         layout={view.layout}
         filtered={query.trim() !== ''}
         onCreate={canPost ? () => void startThread() : undefined}
+      />
+      <SeenBar
+        manual={manualReceipts}
+        receipt={heldReceipt}
+        unread={(resolvedRoom?.unread ?? 0) > 0 || (resolvedRoom?.marked_unread ?? false)}
+        onSeen={markRead}
       />
     </div>
   </div>
