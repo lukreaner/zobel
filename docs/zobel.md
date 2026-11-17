@@ -39,8 +39,8 @@ The sync script keeps Zobel's version of these and drops Sable's changes to them
 - `.github/workflows`. Sable's GitHub workflows build and publish Sable's releases, so Zobel
   removed them.
 
-Everything under a `zobel` directory (`src/lib/zobel`, `scripts/zobel`) and this page exist
-only in Zobel, so they never conflict.
+Everything under a `zobel` directory (`src/lib/zobel`, `scripts/zobel`), the end-to-end
+tests named `tests/e2e/zobel-*` and this page exist only in Zobel, so they never conflict.
 
 ## Edits to Sable's files
 
@@ -89,9 +89,31 @@ in the table above.
   on, opening a chat sends no read receipt. The timeline keeps the receipt it would have sent
   and shows a "Seen" button below the messages; tapping it sends that receipt. Each chat can be
   set apart from the setting under its own settings (General, Access). Those per-chat choices
-  sync as the account data `io.github.lukreaner.zobel.manual_read_receipts`. Marking a chat as
+  sync, while Sable's settings sync is on, as the account data
+  `io.github.lukreaner.zobel.manual_read_receipts`. Marking a chat as
   read from a menu, a notification or with Escape still works as in Sable. The code is in
   `src/lib/zobel/manual-read-receipts.svelte.ts` and `src/lib/zobel/SeenBar.svelte`.
+
+  Tests: `src/lib/zobel/*.test.ts`, and in the browser `tests/e2e/zobel-seen.spec.ts` (when the
+  app asks for a receipt) and `tests/e2e/zobel-seen-homeserver.spec.ts` (what a real homeserver
+  then tells the other member of the chat).
+
+## End-to-end tests without Docker
+
+Sable's end-to-end tests start their homeserver in a Docker container.
+`tests/e2e/playwright.zobel-local.config.ts` runs them where there is no Docker, against a
+homeserver that is already running:
+
+```sh
+pnpm wasm:dev   # once, and again after Sable's Rust code changed
+pnpm exec playwright test -c tests/e2e/playwright.zobel-local.config.ts zobel-seen
+```
+
+The homeserver is a [Continuwuity](https://forgejo.ellis.link/continuwuation/continuwuity)
+binary set up as `tests/e2e/fixtures/continuwuity.ts` sets up its container: server name
+`test.local`, registration token `sable-e2e`, listening on http://127.0.0.1:18008 (or wherever
+`ZOBEL_E2E_HOMESERVER` points). So far only the `zobel-seen` tests have
+been run this way.
 
 ## What is still Sable
 
