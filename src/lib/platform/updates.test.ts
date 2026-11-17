@@ -41,7 +41,7 @@ test.each(['android', 'ios'])(
     expect(updatePlatform()).toBe('mobile');
     await expect(checkForMobileUpdate()).resolves.toBe(true);
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/releases/download/latest/latest.json'),
+      expect.stringContaining('/releases/latest/download/latest.json'),
       { cache: 'no-store' }
     );
   }
