@@ -1,0 +1,28 @@
+// Builds Sable's Android app as Zobel without editing Sable's Gradle files: the app gets
+// Zobel's application ID and name, so it installs next to Sable instead of over it.
+//
+// scripts/zobel/android-build.sh puts this file into Gradle's init.d for one build and
+// sets ZOBEL_ANDROID=1. Without that variable it does nothing.
+//
+// The Kotlin package, the JNI symbols and Tauri's identifier stay moe.sable.client: the
+// application ID is what Android installs by, and changing the rest would touch
+// files Sable edits all the time.
+
+if (System.getenv('ZOBEL_ANDROID') != '1') return
+
+def applicationId = System.getenv('ZOBEL_ANDROID_APPLICATION_ID') ?: 'io.github.lukreaner.zobel'
+def appName = System.getenv('ZOBEL_ANDROID_APP_NAME') ?: 'Zobel'
+
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('com.android.application') {
+        def components = project.extensions.getByName('androidComponents')
+        // finalizeDsl runs after build.gradle.kts has set Sable's values and before the
+        // variants are created from them.
+        components.finalizeDsl({ android ->
+            android.defaultConfig.applicationId = applicationId
+            android.defaultConfig.resValue('string', 'app_name', appName)
+            android.defaultConfig.resValue('string', 'main_activity_title', appName)
+            project.logger.lifecycle("Zobel: building ${project.path} as ${appName} (${applicationId})")
+        } as Action)
+    }
+}
