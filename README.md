@@ -9,7 +9,8 @@ It is a fork of [Sable](https://git.sable.moe/SableClient/sable-next) and stays 
 Zobel is at an early stage.
 
 - **Web app:** carries the Zobel name and builds from this repository. There is no hosted instance yet, so you build and serve it yourself.
-- **Desktop and mobile apps:** still build under Sable's name and app identifiers. Zobel does not publish installers.
+- **Android app:** builds as Zobel, with its own app identifier, so it installs next to Sable. Each [release](https://github.com/lukreaner/zobel/releases) carries the APK, and testers get it through Firebase App Distribution.
+- **Desktop and iOS apps:** still build under Sable's name and app identifiers. Zobel does not publish them.
 - **Services:** push notifications, link previews, the GIF proxy, the theme catalogue and supporter badges are still Sable's, as configured in [`static/config.json`](static/config.json). Sable's [privacy policy](https://sable.moe/privacy) describes them.
 
 ## Running it
@@ -30,6 +31,10 @@ Run `pnpm test` for the unit tests. [`docs/TESTING.md`](docs/TESTING.md) describ
 The [`Sync with Sable`](.github/workflows/zobel-sync-upstream.yml) workflow merges Sable's `main` branch into Zobel's once a day. When a merge needs a decision it stops and opens an issue instead.
 
 To merge by hand, run [`scripts/zobel/sync-upstream.sh`](scripts/zobel/sync-upstream.sh). [`docs/zobel.md`](docs/zobel.md) explains how Zobel keeps its changes small so that these merges stay easy.
+
+## Releases
+
+Releases are made by hand with the [`Release`](.github/workflows/zobel-release.yml) workflow. It writes [Zobel's changelog](zobel/CHANGELOG.md) from the change files in [`zobel/changes`](zobel/changes), adds what came in from Sable, builds and signs the Android app, publishes a GitHub release and uploads the app to Firebase App Distribution. [`docs/zobel.md`](docs/zobel.md#releases) has the details.
 
 ## Reporting problems
 

@@ -1,0 +1,310 @@
+name: Release
+
+# Started by hand (Actions → Release → Run workflow). Builds the Android app from main,
+# writes the changelog, tags and publishes a GitHub release and hands the APK to
+# Firebase App Distribution. docs/zobel.md describes the secrets it needs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version step. "auto" takes it from the change files in zobel/changes.
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      version:
+        description: Exact version instead, e.g. 1.0.0 (optional)
+        type: string
+        required: false
+      dry_run:
+        description: Only build and show the notes; tag, release and upload nothing
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: zobel-release
+  cancel-in-progress: false
+
+env:
+  FIREBASE_TOOLS_VERSION: 15.36.0
+
+jobs:
+  prepare:
+    name: Work out version and notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+      date: ${{ steps.plan.outputs.date }}
+    steps:
+      - name: Check out Zobel
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+
+      - name: Test the release script
+        run: node --test scripts/zobel/*.test.mjs
+
+      - name: Work out the release
+        id: plan
+        env:
+          BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          node scripts/zobel/release.mjs prepare --out release --bump "$BUMP" ${VERSION:+--version "$VERSION"}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          tag="$(node -p "require('./release/release.json').tag")"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+            echo "::error::$tag already exists."
+            exit 1
+          fi
+          {
+            echo "## Zobel $(node -p "require('./release/release.json').version")"
+            echo
+            cat release/release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the notes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    name: Build the Android app
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: always
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - name: Make room on the runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Check out Zobel
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Install the pinned Android SDK packages
+        run: |
+          pin() { sed -n "s/^$1 = \"\(.*\)\"$/\1/p" .mise/config.toml; }
+          ndk="$(pin ANDROID_NDK_VERSION)"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "platform-tools" "platforms;$(pin ANDROID_PLATFORM)" \
+            "build-tools;$(pin ANDROID_BUILD_TOOLS_VERSION)" "ndk;$ndk" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/$(pin ANDROID_BUILD_TOOLS_VERSION)" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libclang-dev
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" \
+            --profile minimal --target wasm32-unknown-unknown,aarch64-linux-android
+          pnpm install --frozen-lockfile
+
+      - name: Set up signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            if [ "$DRY_RUN" != false ]; then
+              echo "::warning::No signing key: this dry run builds an unsigned APK."
+              exit 0
+            fi
+            echo "::error::The secret ANDROID_KEYSTORE_BASE64 is missing; docs/zobel.md says how to create it."
+            exit 1
+          fi
+          base64 -d <<< "$ANDROID_KEYSTORE_BASE64" > "$RUNNER_TEMP/zobel.jks"
+          keytool -list -keystore "$RUNNER_TEMP/zobel.jks" -alias "$ANDROID_KEY_ALIAS" \
+            -storepass:env ANDROID_KEY_PASSWORD > /dev/null
+          printf 'keyAlias=%s\npassword=%s\nstoreFile=%s\n' \
+            "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" "$RUNNER_TEMP/zobel.jks" \
+            > src-tauri/gen/android/keystore.properties
+
+      - name: Build the APK
+        run: scripts/zobel/android-build.sh --version "$VERSION" --target aarch64
+
+      - name: Check the APK
+        run: |
+          mapfile -t apks < <(find src-tauri/gen/android/app/build/outputs/apk/arm64/release -maxdepth 1 -name '*.apk')
+          [ "${#apks[@]}" -eq 1 ] || { echo "::error::Expected one APK, found ${#apks[@]}"; exit 1; }
+          badging="$("$BUILD_TOOLS/aapt2" dump badging "${apks[0]}")"
+          echo "$badging" | grep -E "^(package|application-label):"
+          echo "$badging" | grep -q "^package: name='io.github.lukreaner.zobel' .*versionName='$VERSION'" \
+            || { echo "::error::The APK is not Zobel $VERSION"; exit 1; }
+          echo "$badging" | grep -q "^application-label:'Zobel'" \
+            || { echo "::error::The APK is not named Zobel"; exit 1; }
+          mkdir apk
+          if "$BUILD_TOOLS/apksigner" verify --print-certs "${apks[0]}"; then
+            cp "${apks[0]}" "apk/zobel-$VERSION-android-arm64.apk"
+          else
+            cp "${apks[0]}" "apk/zobel-$VERSION-android-arm64-unsigned.apk"
+          fi
+
+      - name: Keep the APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android
+          path: apk/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Tag and publish on GitHub
+    needs: [prepare, android]
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      DATE: ${{ needs.prepare.outputs.date }}
+    steps:
+      - name: Check out the built commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+
+      - name: Download the APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android
+          path: apk
+
+      - name: Write the changelog and tag the release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node scripts/zobel/release.mjs prepare --out "$RUNNER_TEMP/release" --version "$VERSION" --date "$DATE" --write
+          git add -A zobel
+          git commit --quiet -m "Release Zobel $VERSION"
+          git tag -a "$TAG" -m "Zobel $VERSION"
+
+          # The changelog commit goes onto main even if the daily sync moved main meanwhile;
+          # it only touches zobel/, so the merge never conflicts.
+          release="$(git rev-parse HEAD)"
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            git checkout --quiet --detach origin/main
+            if git merge-base --is-ancestor HEAD "$release"; then
+              git checkout --quiet --detach "$release"
+            else
+              git merge --quiet --no-ff -m "Merge the Zobel $VERSION release" "$release"
+            fi
+            git push origin HEAD:main && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep $((attempt * 10))
+          done
+          git push origin "refs/tags/$TAG"
+
+      - name: Publish the GitHub release
+        run: |
+          gh release create "$TAG" --verify-tag --latest \
+            --title "Zobel $VERSION" \
+            --notes-file "$RUNNER_TEMP/release/release-notes.md" \
+            apk/*.apk "$RUNNER_TEMP/release/latest.json#Update manifest"
+
+  firebase:
+    name: Upload to Firebase App Distribution
+    needs: [prepare, android, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      FIREBASE_APP_ID: ${{ vars.FIREBASE_ANDROID_APP_ID }}
+      FIREBASE_GROUPS: ${{ vars.FIREBASE_TESTER_GROUPS }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - name: Check the Firebase settings
+        run: |
+          missing=()
+          [ -n "$FIREBASE_APP_ID" ] || missing+=("variable FIREBASE_ANDROID_APP_ID")
+          [ -n "$FIREBASE_SERVICE_ACCOUNT" ] || missing+=("secret FIREBASE_SERVICE_ACCOUNT")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Firebase is not set up yet (missing: ${missing[*]}). docs/zobel.md says how; then re-run this job."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+
+      - name: Download the APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android
+          path: apk
+
+      - name: Download the notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: release
+
+      - name: Upload the APK
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase.json"
+          args=()
+          [ -z "$FIREBASE_GROUPS" ] || args+=(--groups "$FIREBASE_GROUPS")
+          npx --yes "firebase-tools@$FIREBASE_TOOLS_VERSION" appdistribution:distribute \
+            "apk/zobel-$VERSION-android-arm64.apk" \
+            --app "$FIREBASE_APP_ID" \
+            --release-notes-file release/release-notes.txt \
+            "${args[@]}"
