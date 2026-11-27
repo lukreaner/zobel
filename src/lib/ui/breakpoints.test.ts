@@ -14,6 +14,8 @@ test('CSS and JavaScript use the same layout breakpoints', () => {
     });
 
   expect(definitions.get('--compact-height')).toBe(BREAKPOINTS.compactHeight);
-  expect(definitions.get('--app-layout')).toBe(`${BREAKPOINTS.wide} and (not (--compact-height))`);
+  expect(definitions.get('--app-layout')).toBe(
+    `(${BREAKPOINTS.wide} or (${BREAKPOINTS.touchWide})) and (not (--compact-height))`
+  );
   expect(definitions.get('--compact-layout')).toBe('not (--app-layout)');
 });

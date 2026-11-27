@@ -7,10 +7,11 @@ function usesAppLayout(wide: boolean, compactHeight: boolean): boolean {
 
 export class AppLayout {
   #wide = new MediaQuery(BREAKPOINTS.wide);
+  #touchWide = new MediaQuery(BREAKPOINTS.touchWide);
   #compactHeight = new MediaQuery(BREAKPOINTS.compactHeight);
 
   get current() {
-    return usesAppLayout(this.#wide.current, this.compactHeight);
+    return usesAppLayout(this.#wide.current || this.#touchWide.current, this.compactHeight);
   }
 
   get compactHeight() {
@@ -24,7 +25,7 @@ export class AppLayout {
 
 export function matchesAppLayout(): boolean {
   return usesAppLayout(
-    window.matchMedia(BREAKPOINTS.wide).matches,
+    window.matchMedia(BREAKPOINTS.wide).matches || window.matchMedia(BREAKPOINTS.touchWide).matches,
     window.matchMedia(BREAKPOINTS.compactHeight).matches
   );
 }

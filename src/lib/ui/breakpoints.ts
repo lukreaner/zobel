@@ -3,6 +3,9 @@
  */
 export const BREAKPOINTS = {
   wide: '(width >= 48rem)',
+  // Zobel: touch screens get the split view from 37rem, so an unfolded foldable in portrait
+  // (around 40–47rem wide) shows the chat next to the room list.
+  touchWide: '(width >= 37rem) and (pointer: coarse)',
   compactHeight: '(height < 30rem) and (width >= 32rem) and (pointer: coarse)',
   sidePanels: '(width > 70.25rem)',
   settingsStack: '42rem',
