@@ -85,6 +85,11 @@
   import { holdsEvent, TimelineRows, type RowValue } from './timeline-rows.svelte.js';
   import { TimelineUnread } from './timeline-unread.svelte.js';
   import {
+    HeldReadReceipt,
+    usesManualReadReceipts,
+  } from '#lib/zobel/manual-read-receipts.svelte.js';
+  import SeenBar from '#lib/zobel/SeenBar.svelte';
+  import {
     estimatedColumnPx,
     estimateRowSize,
     mediaColumnPx,
@@ -216,6 +221,8 @@
     loadRetry.reset();
   });
   let followingRead = $state(false);
+  const heldReceipt = new HeldReadReceipt();
+  let manualReceipts = $derived(usesManualReadReceipts(roomId));
   const rowModel = new TimelineRows({
     timeline: () => timeline,
     readOnly: () => readOnly,
@@ -1096,6 +1103,7 @@
       await onMarkRead();
       if (!disposed) {
         unread.clear();
+        heldReceipt.drop();
         followingRead = windowState.pinned;
       }
     } catch (error) {
@@ -1108,6 +1116,7 @@
   export function dismissUnread(): void {
     unreadNavigation?.abort();
     unread.clear();
+    heldReceipt.drop();
   }
   export function markUnreadFrom(eventId: string, readEventId: string | null): void {
     unreadNavigation?.abort();
@@ -1285,7 +1294,7 @@
   visibleEventId={readPosition.eventId}
   enabled={reading && !unread.blocking && !markingRead && !timeline.resumingLive}
   {atLatest}
-  onRead={markRead}
+  onRead={manualReceipts ? heldReceipt.hold : markRead}
 />
 <TimelineAnnouncements {timeline} {visibleItems} atLiveEdge={atLatest} />
 <MessageContextMenu menu={messageMenu} />
@@ -1584,6 +1593,14 @@
     </div>
   {/if}
 </div>
+<SeenBar
+  manual={manualReceipts}
+  receipt={heldReceipt}
+  {roomId}
+  {threadRootId}
+  unread={hasUnread}
+  onSeen={markRead}
+/>
 
 <style>
   .thread-original {

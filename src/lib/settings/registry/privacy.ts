@@ -1,5 +1,6 @@
 import { accountDisablesReadReceipts } from '../preferences.svelte.js';
 import BugIcon from 'phosphor-svelte/lib/BugIcon';
+import ChecksIcon from 'phosphor-svelte/lib/ChecksIcon';
 import EyeIcon from 'phosphor-svelte/lib/EyeIcon';
 import EyeSlashIcon from 'phosphor-svelte/lib/EyeSlashIcon';
 import FilmStripIcon from 'phosphor-svelte/lib/FilmStripIcon';
@@ -72,6 +73,15 @@ export const privacyCategory: SettingsCategory = {
       name: 'common.readReceipts',
       terms: ['settings.terms.sendReadReceipts'],
       description: 'settings.sendReadReceiptsHint',
+      type: 'boolean',
+    },
+    {
+      key: 'manualReadReceipts',
+      section: 'activity',
+      icon: ChecksIcon,
+      name: 'zobel.manualReadReceipts',
+      terms: ['zobel.manualReadReceiptsTerms'],
+      description: 'zobel.manualReadReceiptsHint',
       type: 'boolean',
     },
     {

@@ -439,6 +439,7 @@ const SETTINGS = {
 
   sendTypingNotifications: toggle(true, { account: true, perAccount: true }),
   sendReadReceipts: toggle(true, { account: true, perAccount: true }),
+  manualReadReceipts: toggle(false, { account: true }),
   sendPresence: toggle(true, { account: true, perAccount: true }),
   blurMedia: toggle(false, { account: true }),
   blurAvatars: toggle(false, { account: true }),

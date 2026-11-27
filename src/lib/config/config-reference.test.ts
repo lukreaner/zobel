@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import en from '../../locales/en.json';
+import sableEn from '../../locales/en.json';
+import zobelEn from '#lib/zobel/locales/en.json';
 import { ACCOUNT_PREFERENCES } from '#lib/settings/definitions.js';
 import { parseAccountConfig } from './account-config';
 import { RuntimeSchema } from './runtime-config';
 
 type Schema = Record<string, unknown>;
+
+// Zobel keeps the names of its own settings outside Sable's locale files.
+const en = { ...sableEn, ...zobelEn };
 
 const PLATFORM_DEFAULTS = new Set(['reducedMotion', 'updateChannel', 'useCustomTitleBar']);
 
