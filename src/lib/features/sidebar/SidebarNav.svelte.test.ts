@@ -77,6 +77,7 @@ function space(roomId = '!space:example.org', name = 'Space'): RoomListItemView 
     avatar_url: null,
     is_direct: false,
     direct_targets: [],
+    group_members: [],
     join_rule: 'invite',
     tags: [],
     state: 'joined',
@@ -90,6 +91,7 @@ function space(roomId = '!space:example.org', name = 'Space'): RoomListItemView 
     supports_knock_restricted: true,
     space_children: [],
     bridge: null,
+    media_previews: null,
     unread: 0,
     notifying: 0,
     highlight: 0,
@@ -302,6 +304,7 @@ test('adds an incoming unread DM to the navbar and removes it when read', async 
     room_kind: 'text',
     is_direct: true,
     direct_targets: ['@alice:example.org'],
+    group_members: [],
   };
   const { client: core, emit } = fixtureCore([room]);
   await startRoomList(core);
@@ -316,7 +319,11 @@ test('adds an incoming unread DM to the navbar and removes it when read', async 
     notifying: 1,
     latest_event: {
       sender: '@alice:example.org',
+      own: false,
+      sender_label: null,
+      kind: 'text',
       body: 'Hello',
+      emotes: [],
       timestamp: 1000,
       sending: false,
       event_id: '$message',
@@ -415,6 +422,7 @@ test('a muted direct chat marked unread by hand still reaches the navbar', async
     room_kind: 'text',
     is_direct: true,
     direct_targets: ['@bo:example.org'],
+    group_members: [],
     marked_unread: true,
     notification: { room: 'mute', default: 'all' },
   });

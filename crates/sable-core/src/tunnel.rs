@@ -1,5 +1,6 @@
-use crate::Core;
+use crate::SignedIn;
 use crate::protocol::{OpenIdTokenView, RpcCode, RpcError, UrlPreviewView};
+use matrix_sdk::ruma::OwnedUserId;
 use sable_link_preview::{
     Fetch as _, MAX_DIRECT_VIDEO_BYTES, PostMediaKind, PreviewData, Response as _, ScrapeOptions,
     TunnelFetch,
@@ -21,6 +22,13 @@ const MAX_SCRAPED_MEDIA: usize = 512;
 
 const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
+/// How long a service that refused a ticket is left alone. Asking can take as long as the
+/// request timeout, and every link in the room would wait for it in turn.
+const RETRY_AFTER_REFUSAL: Duration = Duration::from_mins(5);
+
+/// Shorter for a request that never got an answer, which a moment offline also causes.
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(30);
+
 struct Session {
     service: String,
     expires: Instant,
@@ -29,8 +37,11 @@ struct Session {
 
 #[derive(Default)]
 struct State {
+    /// Whose token and ticket these are, so another account never rides on them.
+    owner: Option<OwnedUserId>,
     openid: Option<(OpenIdTokenView, Instant)>,
     session: Option<Session>,
+    retry_after: Option<(String, Instant)>,
 }
 
 struct ScrapedMedia {
@@ -111,18 +122,25 @@ async fn request_ticket(service: &str, token: &OpenIdTokenView) -> Result<Ticket
     }
     tracing::info!("tunnel ticket answered {status}");
     Ok(Ticket::Refused {
-        token_rejected: status == matrix_sdk::reqwest::StatusCode::UNAUTHORIZED,
+        token_rejected: status == reqwest::StatusCode::UNAUTHORIZED,
     })
 }
 
-impl Core {
+impl SignedIn {
     /// The relay client for the current ticket, `None` when the service withholds one.
     /// Holding the lock while asking keeps a single ticket request in flight.
     async fn tunnel_fetch(&self, service: &str) -> Result<Option<TunnelFetch>, RpcError> {
         let Some(relay) = relay_url(service) else {
             return Ok(None);
         };
-        let mut state = self.tunnel.state.lock().await;
+        let owner = self.client().user_id().map(ToOwned::to_owned);
+        let mut state = self.core().tunnel.state.lock().await;
+        if state.owner != owner {
+            *state = State {
+                owner,
+                ..State::default()
+            };
+        }
         if let Some(session) = &state.session
             && session.service == service
             && session.expires > Instant::now() + REFRESH_MARGIN
@@ -130,6 +148,12 @@ impl Core {
             return Ok(Some(session.fetch.clone()));
         }
         state.session = None;
+        if let Some((refused, until)) = &state.retry_after
+            && refused == service
+            && *until > Instant::now()
+        {
+            return Ok(None);
+        }
 
         let token = match &state.openid {
             Some((token, expires)) if *expires > Instant::now() + REFRESH_MARGIN => token.clone(),
@@ -142,15 +166,27 @@ impl Core {
                 token
             }
         };
-        let granted = match request_ticket(service, &token).await? {
-            Ticket::Granted(granted) => granted,
-            Ticket::Refused { token_rejected } => {
-                if token_rejected {
+        let granted = match request_ticket(service, &token).await {
+            Ok(Ticket::Granted(granted)) => granted,
+            withheld => {
+                if matches!(
+                    withheld,
+                    Ok(Ticket::Refused {
+                        token_rejected: true
+                    })
+                ) {
                     state.openid = None;
                 }
-                return Ok(None);
+                let wait = if withheld.is_ok() {
+                    RETRY_AFTER_REFUSAL
+                } else {
+                    RETRY_AFTER_FAILURE
+                };
+                state.retry_after = Some((service.to_owned(), Instant::now() + wait));
+                return withheld.map(|_| None);
             }
         };
+        state.retry_after = None;
         let fetch = TunnelFetch::new(relay, granted.ticket, USER_AGENT.to_owned());
         state.session = Some(Session {
             service: service.to_owned(),
@@ -171,14 +207,14 @@ impl Core {
         let Some(fetch) = self.tunnel_fetch(service).await? else {
             return Ok(None);
         };
-        let Some(preview) =
+        let Ok(preview) =
             sable_link_preview::scrape(&fetch, &target, &ScrapeOptions::default()).await
         else {
             return Ok(None);
         };
         {
             let video_cap = usize::try_from(MAX_DIRECT_VIDEO_BYTES).unwrap_or(usize::MAX);
-            let mut scraped = self.tunnel.scraped.lock();
+            let mut scraped = self.core().tunnel.scraped.lock();
             for (media, kind) in preview.media_urls() {
                 let cap = match kind {
                     PostMediaKind::Image => MAX_IMAGE_BYTES,
@@ -205,7 +241,7 @@ impl Core {
         limit: usize,
     ) -> Option<Result<Vec<u8>, RpcError>> {
         let (cap, service) = {
-            let mut scraped = self.tunnel.scraped.lock();
+            let mut scraped = self.core().tunnel.scraped.lock();
             let known = scraped.get(source)?;
             (known.cap, known.service.clone())
         };
@@ -226,7 +262,7 @@ impl Core {
         let response = fetch
             .get(&url, "image/*,video/*;q=0.9,*/*;q=0.5")
             .await
-            .ok_or(RpcCode::Unavailable)?;
+            .map_err(|_| RpcCode::Unavailable)?;
         let body = response
             .body(limit.saturating_add(1))
             .await
@@ -311,9 +347,10 @@ mod tests {
     #[tokio::test]
     async fn a_ticket_is_reused_until_shortly_before_it_expires() {
         let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
         let service = ticket_service(200, 600_000, 1).await;
         for _ in 0..3 {
-            let preview = core
+            let preview = session
                 .tunnel_preview(&service.uri(), "https://example.org/")
                 .await
                 .unwrap();
@@ -324,32 +361,97 @@ mod tests {
     #[tokio::test]
     async fn a_ticket_about_to_expire_is_replaced() {
         let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
         let service = ticket_service(200, 1_000, 2).await;
         for _ in 0..2 {
-            core.tunnel_preview(&service.uri(), "https://example.org/")
+            session
+                .tunnel_preview(&service.uri(), "https://example.org/")
                 .await
                 .unwrap();
         }
     }
 
     #[tokio::test]
-    async fn a_rejected_openid_token_is_requested_again() {
-        let (_server, core) = core_with_openid(2).await;
-        let service = ticket_service(401, 600_000, 2).await;
-        for _ in 0..2 {
-            let preview = core
-                .tunnel_preview(&service.uri(), "https://example.org/")
-                .await
-                .unwrap();
-            assert!(preview.is_none());
+    async fn a_refused_ticket_is_not_asked_for_again_straight_away() {
+        for status in [401, 404, 429] {
+            let (_server, core) = core_with_openid(1).await;
+            let session = core.signed_in().unwrap();
+            let service = ticket_service(status, 600_000, 1).await;
+            for _ in 0..3 {
+                let preview = session
+                    .tunnel_preview(&service.uri(), "https://example.org/")
+                    .await
+                    .unwrap();
+                assert!(preview.is_none());
+            }
         }
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_service_is_not_asked_again_straight_away() {
+        let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
+        let service = "http://127.0.0.1:1";
+        session
+            .tunnel_preview(service, "https://example.org/")
+            .await
+            .unwrap_err();
+        let preview = session
+            .tunnel_preview(service, "https://example.org/")
+            .await
+            .unwrap();
+        assert!(preview.is_none());
+        let (_, until) = core.tunnel.state.lock().await.retry_after.clone().unwrap();
+        assert!(until <= std::time::Instant::now() + super::RETRY_AFTER_FAILURE);
+    }
+
+    #[tokio::test]
+    async fn a_rejected_openid_token_is_requested_again_once_the_wait_is_over() {
+        let (_server, core) = core_with_openid(2).await;
+        let session = core.signed_in().unwrap();
+        let service = ticket_service(401, 600_000, 2).await;
+        session
+            .tunnel_preview(&service.uri(), "https://example.org/")
+            .await
+            .unwrap();
+        core.tunnel.state.lock().await.retry_after =
+            Some((service.uri(), std::time::Instant::now()));
+        session
+            .tunnel_preview(&service.uri(), "https://example.org/")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn another_account_does_not_reuse_the_ticket() {
+        let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
+        let service = ticket_service(200, 600_000, 1).await;
+        {
+            let mut state = core.tunnel.state.lock().await;
+            state.owner = Some(matrix_sdk::ruma::owned_user_id!("@other:example.org"));
+            state.session = Some(super::Session {
+                service: service.uri(),
+                expires: std::time::Instant::now() + std::time::Duration::from_secs(300),
+                fetch: sable_link_preview::TunnelFetch::new(
+                    relay_url(&service.uri()).unwrap(),
+                    "theirs".to_owned(),
+                    super::USER_AGENT.to_owned(),
+                ),
+            });
+        }
+        session
+            .tunnel_preview(&service.uri(), "https://example.org/")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn a_service_without_a_tunnel_gives_no_preview() {
         let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
         let service = ticket_service(404, 600_000, 1).await;
-        let preview = core
+        let preview = session
             .tunnel_preview(&service.uri(), "https://example.org/")
             .await
             .unwrap();
@@ -359,8 +461,9 @@ mod tests {
     #[tokio::test]
     async fn an_unreachable_relay_gives_no_preview_and_never_asks_the_service() {
         let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
         let service = ticket_service(200, 600_000, 1).await;
-        let preview = core
+        let preview = session
             .tunnel_preview(&service.uri(), "https://example.org/")
             .await
             .unwrap();
@@ -378,6 +481,7 @@ mod tests {
     #[tokio::test]
     async fn only_media_a_scrape_handed_out_is_fetched() {
         let (_server, core) = core_with_openid(0).await;
+        let session = core.signed_in().unwrap();
         core.tunnel.scraped.lock().insert(
             "https://cdn.example/known.png".to_owned(),
             ScrapedMedia {
@@ -389,7 +493,7 @@ mod tests {
             "https://tracker.example/pixel.png",
             "mxc://example.org/media",
         ] {
-            assert!(core.tunnel_media(source, usize::MAX).await.is_none());
+            assert!(session.tunnel_media(source, usize::MAX).await.is_none());
         }
     }
 
@@ -413,6 +517,7 @@ mod tests {
     #[tokio::test]
     async fn handed_out_media_fails_closed_when_the_relay_is_down() {
         let (_server, core) = core_with_openid(1).await;
+        let session = core.signed_in().unwrap();
         let service = ticket_service(200, 600_000, 1).await;
         core.tunnel.scraped.lock().insert(
             "https://cdn.example/a.png".to_owned(),
@@ -421,7 +526,7 @@ mod tests {
                 service: service.uri(),
             },
         );
-        let media = core
+        let media = session
             .tunnel_media("https://cdn.example/a.png", usize::MAX)
             .await;
         assert!(matches!(media, Some(Err(_))));
@@ -433,6 +538,7 @@ mod tests {
         let service = std::env::var("TUNNEL_SERVICE").unwrap();
         let ticket = std::env::var("TUNNEL_TICKET").unwrap();
         let (_server, core) = core_with_openid(0).await;
+        let session = core.signed_in().unwrap();
         let relay = relay_url(&service).unwrap();
         core.tunnel.state.lock().await.session = Some(super::Session {
             service: service.clone(),
@@ -444,7 +550,7 @@ mod tests {
             ),
         });
 
-        let preview = core
+        let preview = session
             .tunnel_preview(&service, "https://github.com/SableClient/soliditas")
             .await
             .unwrap()
@@ -457,14 +563,15 @@ mod tests {
         let image = preview.image.expect("an image");
         assert!(image.starts_with("https://"), "{image}");
 
-        let bytes = core
+        let bytes = session
             .tunnel_media(&image, usize::MAX)
             .await
             .expect("handed out")
             .unwrap();
         assert!(bytes.len() > 1000, "{} bytes", bytes.len());
         assert!(
-            core.tunnel_media("https://example.com/never-handed-out.png", usize::MAX)
+            session
+                .tunnel_media("https://example.com/never-handed-out.png", usize::MAX)
                 .await
                 .is_none()
         );

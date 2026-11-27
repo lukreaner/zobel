@@ -30,8 +30,10 @@ async function size(file: Blob): Promise<{ width: number; height: number }> {
   return result;
 }
 
-afterEach(() => {
+afterEach(async () => {
   cropRequest.settle(null);
+  document.documentElement.dir = 'ltr';
+  await page.viewport(414, 896);
 });
 
 test('an avatar crops to the centred square', async () => {
@@ -45,6 +47,48 @@ test('an avatar crops to the centred square', async () => {
   const cropped = await result;
   expect(cropped?.type).toBe('image/png');
   expect(await size(cropped as File)).toEqual({ width: 400, height: 400 });
+});
+
+test.each([
+  ['an opaque HEIC', 'image/jpeg', 'image/heic', '#3366cc', 'photo.jpg'],
+  ['an opaque HEIF', 'image/jpeg', 'image/heif', '#3366cc', 'photo.jpg'],
+  ['a transparent HEIC', 'image/png', 'image/heic', 'transparent', 'photo.png'],
+  ['an opaque GIF', 'image/png', 'image/gif', '#3366cc', 'photo.png'],
+  ['an opaque BMP', 'image/png', 'image/bmp', '#3366cc', 'photo.png'],
+  ['an opaque AVIF', 'image/png', 'image/avif', '#3366cc', 'photo.png'],
+])('%s picture is saved as %s', async (_, type, source, fill, name) => {
+  await render(ImageCropHost);
+  const canvas = new OffscreenCanvas(400, 400);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('No canvas context');
+  context.fillStyle = fill;
+  context.fillRect(0, 0, 400, 400);
+  const file = new File([await canvas.convertToBlob({ type: 'image/png' })], 'photo.img', {
+    type: source,
+  });
+  const result = requestCrop(file, 'avatar');
+  const apply = page.getByRole('button', { name: 'Apply' });
+  await expect.element(apply).toBeEnabled();
+  await apply.click();
+
+  const cropped = await result;
+  expect(cropped?.type).toBe(type);
+  expect(cropped?.name).toBe(name);
+});
+
+test('right-to-left layouts centre the dialog', async () => {
+  document.documentElement.dir = 'rtl';
+  await page.viewport(1280, 900);
+  await render(ImageCropHost);
+  void requestCrop(await png(800, 400), 'avatar');
+  const dialog = page.getByRole('dialog', { name: 'Crop picture' });
+  await expect.element(dialog).toBeVisible();
+  await expect
+    .poll(() => {
+      const { left, right } = dialog.element().getBoundingClientRect();
+      return Math.abs(left + right - window.innerWidth);
+    })
+    .toBeLessThan(2);
 });
 
 test('dragging the image moves the crop', async () => {

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { TimelineItemContentView } from '#src/generated/protocol';
-import { replyPreviewBody } from '#lib/features/room/messages/reply-preview.js';
+import { previewSegments, replyPreviewBody } from '#lib/features/room/messages/reply-preview.js';
 import { markdownToContent } from '#lib/model/model.js';
 
 const video: TimelineItemContentView = {
@@ -135,7 +135,8 @@ test('a spoiler stays hidden in the preview', () => {
 test('a formatted spoiler uses one placeholder while separate spoilers stay separate', () => {
   const { body, formatted_body: html } = markdownToContent(
     '||this is a *huge* spoiler|| and ||another||',
-    []
+    [],
+    'matrix.to'
   );
 
   expect(
@@ -177,4 +178,11 @@ test('an uncaptioned gallery is quoted by its file names', () => {
       ],
     })
   ).toBe('memo.ogg, notes.pdf');
+});
+
+test('a preview splits at each emote in order and leaves missing ones as text', () => {
+  const a = { alt: ':a:', source: 'mxc://x/a' };
+  const b = { alt: ':b:', source: 'mxc://x/b' };
+  expect(previewSegments(':a: then :a: and :b:', [a, a, b])).toEqual([a, ' then ', a, ' and ', b]);
+  expect(previewSegments('no emotes here', [b])).toEqual(['no emotes here']);
 });

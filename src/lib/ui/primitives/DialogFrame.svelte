@@ -165,6 +165,10 @@
     bottom: var(--keyboard-overlap);
     box-shadow: var(--shadow-dialog);
     color: var(--surface-on-container);
+
+    /* Lets a body with `min-height: 0` shrink to the panel. */
+    display: flex;
+    flex-direction: column;
     max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - var(--space-300) * 2);
     overflow: auto;
     padding: var(--space-400) calc(var(--space-400) + var(--safe-right)) var(--space-400)
@@ -181,14 +185,11 @@
     max-width: 100%;
   }
 
+  /* BottomSheet scrolls its own body and clears the home indicator there. */
   :global(.dialog-content-sheet) {
     max-height: calc(100dvh - var(--safe-top) - var(--keyboard-overlap) - var(--space-300) * 2);
-    overscroll-behavior: contain;
-    padding: 0 var(--safe-right) var(--sheet-inset-bottom) var(--safe-left);
-  }
-
-  :global(.dialog-content-sheet:has(> div > [data-inset-owner~='bottom'])) {
-    padding-bottom: 0;
+    overflow: hidden;
+    padding: 0 var(--safe-right) 0 var(--safe-left);
   }
 
   @media (width >= 42rem) {
@@ -216,6 +217,7 @@
       border: var(--border-width) solid var(--surface-container-line);
       border-radius: var(--radius);
       height: min(52rem, calc(100dvh - 3rem - var(--safe-top) - var(--safe-bottom)));
+      inset-inline-start: auto;
       /* stylelint-disable-next-line csstools/use-logical -- centred, so the same in both directions */
       left: calc(50% + (var(--safe-left) - var(--safe-right)) / 2);
       padding: 0;

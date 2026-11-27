@@ -1,7 +1,7 @@
 use std::{
     ffi::{CString, OsStr},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
 };
@@ -375,7 +375,9 @@ fn media_resource(asset: &PHAsset) -> Option<(Retained<PHAssetResource>, String)
 }
 
 fn recent_media_blocking(limit: usize) -> Result<Vec<RecentMedia>, String> {
-    authorize_blocking(PHAccessLevel::ReadWrite)?;
+    if !matches!(media_access(), "granted" | "limited") {
+        return Ok(Vec::new());
+    }
     autoreleasepool(|_| {
         let newest = NSSortDescriptor::sortDescriptorWithKey_ascending(
             Some(&NSString::from_str("creationDate")),
@@ -521,11 +523,36 @@ fn media_file_blocking(id: &str) -> Result<Vec<u8>, String> {
     result
 }
 
+fn media_access() -> &'static str {
+    // SAFETY: a class method that only reads the current authorization and is callable from any thread
+    match unsafe { PHPhotoLibrary::authorizationStatusForAccessLevel(PHAccessLevel::ReadWrite) } {
+        PHAuthorizationStatus::Authorized => "granted",
+        PHAuthorizationStatus::Limited => "limited",
+        PHAuthorizationStatus::NotDetermined => "unasked",
+        _ => "denied",
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RecentMediaList {
+    access: &'static str,
+    items: Vec<RecentMedia>,
+}
+
 #[tauri::command]
-pub(crate) async fn recent_media(limit: usize) -> Result<Vec<RecentMedia>, String> {
-    tauri::async_runtime::spawn_blocking(move || recent_media_blocking(limit))
-        .await
-        .map_err(|error| error.to_string())?
+pub(crate) async fn recent_media(limit: usize, request: bool) -> Result<RecentMediaList, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if request {
+            // A refusal is reported through `access`, not as a failure.
+            let _ = authorize_blocking(PHAccessLevel::ReadWrite);
+        }
+        Ok(RecentMediaList {
+            access: media_access(),
+            items: recent_media_blocking(limit)?,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -650,7 +677,7 @@ pub(crate) fn donate_sent_message(
             log::warn!("conversation donation bridge is unavailable");
             return;
         };
-        let avatar = (!avatar.is_empty()).then(|| objc2_foundation::NSData::with_bytes(&avatar));
+        let avatar = (!avatar.is_empty()).then(|| NSData::with_bytes(&avatar));
         let (user, room, name) = (
             NSString::from_str(&user),
             NSString::from_str(&room),
@@ -703,6 +730,10 @@ pub(crate) fn hide_form_accessory_bar(window: &tauri::WebviewWindow) {
                 };
                 // SAFETY: the function takes (self, _cmd) and returns an object pointer, matching the inputAccessoryView signature
                 unsafe {
+                    #[expect(
+                        trivial_casts,
+                        reason = "add_method needs a fn pointer, not the fn item"
+                    )]
                     builder.add_method(
                         sel!(inputAccessoryView),
                         input_accessory_view_nil as extern "C-unwind" fn(_, _) -> _,
@@ -716,18 +747,27 @@ pub(crate) fn hide_form_accessory_bar(window: &tauri::WebviewWindow) {
     });
 }
 
-/// WKWebView can leave part of the page unpainted after the keyboard hides until it is laid out again.
+/// `WKWebView` can leave part of the page unpainted after the keyboard hides until it is laid out again.
 pub(crate) fn relayout_on_keyboard_hide(window: &tauri::WebviewWindow) {
     let window = window.clone();
     // SAFETY: UIKit notification names are immutable constants initialized when the framework loads
     let name = unsafe { UIKeyboardDidHideNotification };
     observe_notification(name, move || {
-        let _ = window.with_webview(|webview| {
-            // SAFETY: with_webview runs on the main thread and inner() is the live WKWebView
-            let webview: &AnyObject = unsafe { &*webview.inner().cast::<AnyObject>() };
-            // SAFETY: setNeedsLayout takes no arguments and returns void
-            let _: () = unsafe { msg_send![webview, setNeedsLayout] };
+        let window = window.clone();
+        // Dropping the webview resigns first responder and posts this notification synchronously
+        // while tauri holds its window map, so with_webview has to wait for the next main loop turn.
+        let block = RcBlock::new(move || {
+            let _ = window.with_webview(|webview| {
+                // SAFETY: with_webview runs on the main thread and inner() is the live WKWebView
+                let webview: &AnyObject = unsafe { &*webview.inner().cast::<AnyObject>() };
+                // SAFETY: setNeedsLayout takes no arguments and returns void
+                let _: () = unsafe { msg_send![webview, setNeedsLayout] };
+            });
         });
+        // SAFETY: +mainQueue returns the non-nil main NSOperationQueue
+        let queue: &AnyObject = unsafe { msg_send![objc2::class!(NSOperationQueue), mainQueue] };
+        // SAFETY: addOperationWithBlock: takes a block returning void, copies it and runs it later on the main queue
+        let _: () = unsafe { msg_send![queue, addOperationWithBlock: &*block] };
     });
 }
 
@@ -748,6 +788,20 @@ pub(crate) fn set_system_bars_hidden(
             let _: () = unsafe { msg_send![controller, setPrefersStatusBarHidden: hidden] };
             // SAFETY: UIViewController declares setPrefersHomeIndicatorAutoHidden: taking a BOOL
             let _: () = unsafe { msg_send![controller, setPrefersHomeIndicatorAutoHidden: hidden] };
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "tauri extracts command arguments by value"
+)]
+pub(crate) fn set_keep_screen_on(window: tauri::WebviewWindow, on: bool) -> Result<(), String> {
+    window
+        .with_webview(move |_| {
+            // SAFETY: with_webview runs on the main thread and UIApplication declares setIdleTimerDisabled: taking a BOOL
+            let _: () = unsafe { msg_send![shared_application(), setIdleTimerDisabled: on] };
         })
         .map_err(|error| error.to_string())
 }
@@ -873,6 +927,38 @@ fn end_background_task(task: &AtomicUsize) {
     }
 }
 
+#[link(name = "AudioToolbox", kind = "framework")]
+unsafe extern "C" {
+    fn AudioServicesCreateSystemSoundID(url: &NSURL, sound: *mut u32) -> i32;
+    fn AudioServicesPlaySystemSound(sound: u32);
+}
+
+#[tauri::command]
+pub(crate) fn play_notification_chime() -> Result<(), String> {
+    static CHIME: OnceLock<Result<u32, String>> = OnceLock::new();
+    let sound = CHIME
+        .get_or_init(|| {
+            let url = objc2_foundation::NSBundle::mainBundle()
+                .URLForResource_withExtension(
+                    Some(&NSString::from_str("msg")),
+                    Some(&NSString::from_str("caf")),
+                )
+                .ok_or_else(|| "msg.caf is missing from the app bundle".to_owned())?;
+            let mut sound = 0;
+            // SAFETY: NSURL is toll-free bridged to CFURL and `sound` is a valid out pointer
+            let status = unsafe { AudioServicesCreateSystemSoundID(&url, &raw mut sound) };
+            if status == 0 {
+                Ok(sound)
+            } else {
+                Err(format!("AudioServicesCreateSystemSoundID: {status}"))
+            }
+        })
+        .clone()?;
+    // SAFETY: the sound came from AudioServicesCreateSystemSoundID and is never disposed
+    unsafe { AudioServicesPlaySystemSound(sound) };
+    Ok(())
+}
+
 #[tauri::command]
 #[expect(
     clippy::needless_pass_by_value,
@@ -884,7 +970,7 @@ pub(crate) fn haptic_feedback(app: tauri::AppHandle, strong: bool) -> Result<(),
         let allocated: objc2::rc::Allocated<AnyObject> =
             unsafe { msg_send![objc2::class!(UIImpactFeedbackGenerator), alloc] };
         // SAFETY: initWithStyle: takes a UIImpactFeedbackStyle (NSInteger) and runs on the main thread as UIKit requires
-        let generator: objc2::rc::Retained<AnyObject> =
+        let generator: Retained<AnyObject> =
             unsafe { msg_send![allocated, initWithStyle: isize::from(strong)] };
         // SAFETY: impactOccurred takes no arguments and returns void
         let _: () = unsafe { msg_send![&*generator, impactOccurred] };

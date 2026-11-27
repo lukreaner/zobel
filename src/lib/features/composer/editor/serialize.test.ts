@@ -4,6 +4,8 @@ import { Fragment, Slice, type Mark, type Node as ProseMirrorNode } from 'prosem
 import { EditorState } from 'prosemirror-state';
 import { describe, expect, onTestFinished, test, vi } from 'vitest';
 
+import { preferences } from '#lib/settings/preferences.svelte.js';
+
 import { composerSchema, parseMatrixHtml } from './schema';
 import {
   composerMarkdown,
@@ -38,6 +40,29 @@ test('plain text sends no formatted body', () => {
     formatted: null,
     mentions: { user_ids: [], room: false },
   });
+});
+
+test('a labelled link on the custom link host stays a link in plain mode', () => {
+  preferences.matrixLinkSelector = 'custom';
+  preferences.matrixLinkCustom = 'links.example.org';
+  onTestFinished(() => {
+    preferences.matrixLinkSelector = 'sable';
+    preferences.matrixLinkCustom = '';
+  });
+
+  expect(
+    serializePlain(textDoc('[Alice](https://links.example.org/#/@alice:example.org)')).formatted
+  ).toBe(
+    '<a href="https://links.example.org/#/@alice:example.org" data-org.matrix.msc4550.link="">Alice</a>'
+  );
+});
+
+test('a bare link to one event is sent as written and not marked explicit', () => {
+  const href = 'https://link.sable.moe/#/!room:example.org/$event';
+
+  expect(serializeComposer(parseMatrixHtml(`<a href="${href}">${href}</a>`)).formatted).toBe(
+    `<a href="${href}">${href}</a>`
+  );
 });
 
 test('a code block containing backticks keeps a valid body fence', () => {
@@ -120,6 +145,20 @@ test('typed LaTeX is sent as data-mx-maths with the source as body', () => {
   );
   expect(rich.body).toBe('so $x^2$ holds');
   expect(rich.formatted).toBe(expected);
+});
+
+test('maths falls back to backticks inside the dollars', () => {
+  const maths = (latex: string) => composerSchema.nodes.math_inline.create({ latex });
+  const cases = [
+    { content: [maths('a\\')], markdown: '$`a\\`$' },
+    { content: [maths('x'), composerSchema.text('5')], markdown: '$`x`$5' },
+    { content: [maths('`')], markdown: '$```$' },
+  ];
+  for (const { content, markdown } of cases) {
+    const source = docOf(para(content));
+    expect(composerMarkdown(source)).toBe(markdown);
+    expect(richFromPlain(textDoc(markdown)).toJSON()).toEqual(source.toJSON());
+  }
 });
 
 test('an existing time element survives a rich-text edit', () => {

@@ -1,5 +1,82 @@
 # Sable Changelog
 
+## 26.11.4 (2026-11-19)
+
+### Features
+
+* Bot command forms show multi-line fields where the bot asks for them, and fill in your OS, browser, Sable version and homeserver when a bot asks for that information. You can edit or clear what was filled in.
+
+### Fixes
+
+* An account you add no longer starts with the status message and presence of your other accounts.
+* Sticker messages in the bubble timeline layout now get a bubble that fits the sticker on narrow screens instead of spanning the full width.
+* An expanded composer keeps its collapse button while empty and collapses when a message is sent.
+* `/converttodm` gives a chat with more than two members, such as a bridged direct message, your direct message alert level, unless the chat already has its own.
+* Messages with an unknown message type, such as Element's confetti and hearts effects, now show their text instead of being dropped from the timeline.
+* Starting a chat with a user that does not exist shows an error instead of creating an empty room.
+* Show the local network notice in Firefox when a homeserver on your local network keeps dropping the connection, with the about:config setting that fixes it.
+* GIFs and videos without controls or audio can be opened in the media viewer to view them fullscreen.
+* The mobile conversations button opens Home when all rooms are shown in the sidebar.
+* Tapping a notification opens its room instead of failing to switch accounts when a signed-out copy of the same account is saved.
+* Pasting a matrix: link over selected text in the composer now makes the selection the link label, like other links.
+* The pinned messages menu no longer gets stuck loading when a pin changes while it is open, and switching rooms with it open shows only the new room's pins.
+* Starting a chat from someone's profile card opens the chat in Firefox instead of staying on the current room.
+* Profiles that failed to load while offline load again once the connection returns.
+* Clicking your own reaction in a room where you cannot remove it no longer makes it flicker away and come back.
+* Long room names and addresses in the forward, add-existing and protect-rooms dialogs stay inside the dialog instead of overflowing to the right.
+* Stop search results from dimming and showing "Searching…" every second while older history is indexed.
+* Style adjustments to the room side panels and members panel.
+* The space sidebar now shows a scrollbar when its spaces do not fit the window height.
+* Windows installer progresses automatically.
+
+## 26.11.3 (2026-11-18)
+
+### Features
+
+* Self-hosted deployments can set separate light and dark branding themes with `branding.lightThemeUrl` and `branding.darkThemeUrl`.
+* Share the screen in VP8 at 1080p by default.
+
+### Fixes
+
+* Keep the Android keyboard open while scrolling the timeline.
+* Android notifications no longer vanish right after arriving while Sable is in the background, or each time notification settings are re-applied with message previews hidden. Notifications read on another device are now cleared from your read receipt, which also stops Synapse servers from clearing every other room's notification when a push arrives.
+* Voice messages and audio files keep playing on Android and iOS when Sable goes to the background or the screen turns off, with play and pause on the lock screen and in the notification shade.
+* Show banners at a fixed height again, with a setting to match the image shape.
+* Let the call video use the space of hidden controls.
+* Add a copy matrix link button beside the external link in the message menu.
+* Suggest people as you type in the Create Room invite field.
+* On desktop, account pages such as removing a device, changing your password or approving a sign-in now open in your browser, so passkeys work there.
+* Join calls on desktop when the call server is on a local or VPN network address.
+* Use the British English dictionary for spell check on desktop with en-GB, en-IE and other non-US English locales.
+* Emoji search also matches emoji tags, so typing "lol" finds 😂.
+* Pad the sides of the Find or join sheet on phones.
+* Keep the formatting toolbar on one scrolling row, with a fade on the side that has more buttons.
+* Allow forwarding messages to the current chat.
+* Rooms no longer stay unread after they have been read.
+* Hide the link device option on homeservers that cannot sign in another device with a QR code.
+* Open the integration manager without a "Terms not signed" error after accepting its terms.
+* Invites in the inbox no longer show a wrong received date.
+* Keep the Android keyboard open when cancelling a reply, removing an attachment or cancelling an inline edit.
+* Keep the phone screen on during a call on Android and iOS.
+* Download and favourite GIFs that are posted as links from the message menu.
+* Show names in the read receipt and reaction lists in the same colour as in the timeline.
+* Stop the room member settings scrolling sideways on phones.
+* The mobile bottom bar highlights the account tab instead of the alerts button on the profile page.
+* MSC links set to always now also link a reference ending the message. MSC references in received messages are no longer linked unless the sender linked them.
+* Sable no longer adds push rules for every direct chat on its own. Rules it added this way are removed on the next launch, unless you changed them. Bridged direct chats follow the Other rooms default again, and you can set their alerts from the chat menu.
+* Fix OAuth sessions showing as "Sable on Linux on Unknown device".
+* Installed web apps show the system title bar again, so the window can be moved and its buttons no longer cover Sable.
+* Offer QR sign-in right away instead of waiting for the account provider check.
+* Keep read receipts beside a message clear of its encryption warning.
+* Custom emotes now show as images in the reply line instead of their shortcodes.
+* Stop the room list jumping back when scrolled quickly after tapping a room.
+* Fix screen sharing with audio failing to connect in desktop calls.
+* Screen readers no longer announce decorative icons in room icons, comboboxes and icon tooltips, and a profile's bio is announced separately from the profile card.
+* Accept a mention pill again in commands that take a user.
+* Keep the Cancel button beside an upload at its full width.
+* Draw an even waveform for voice messages from other apps such as Element X.
+* Let widgets ask for access to a local network address.
+
 ## 26.11.2 (2026-11-16)
 
 ### Features

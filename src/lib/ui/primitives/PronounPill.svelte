@@ -16,15 +16,22 @@
     class?: ClassValue;
     pillClass?: ClassValue;
     pronouns: readonly PronounView[];
+    showAll?: boolean;
   };
 
-  let { class: className = '', pillClass = '', pronouns, ...rest }: Props = $props();
+  let {
+    class: className = '',
+    pillClass = '',
+    pronouns,
+    showAll = false,
+    ...rest
+  }: Props = $props();
 
   let splitPronouns = $derived(
     visiblePronouns(pronouns, {
       language: currentLocale(),
       filterByLanguage: preferences.filterPronounsByLanguage,
-      limit: pronounPillLimit(preferences.pronounPillLimit),
+      limit: showAll ? Number.POSITIVE_INFINITY : pronounPillLimit(preferences.pronounPillLimit),
       maxLength: pronounPillLength(preferences.pronounPillLength),
     })
   );
@@ -71,21 +78,26 @@
 {#if splitPronouns.visible.length > 0}
   <span
     {...rest}
-    class={['pronoun-pill-container', { empty: shown === 0 }, className]}
+    class={['pronoun-pill-container', { empty: shown === 0, all: showAll }, className]}
     bind:this={container}
   >
-    <span class="pronoun-pill-sizer" aria-hidden="true" bind:this={sizer}>
-      {#each splitPronouns.visible as pronoun, index (index)}
-        <span class="pronoun-pill" lang={pronoun.language ?? undefined} data-text={pronoun.summary}
-        ></span>
-      {/each}
-    </span>
-    <span
-      class="pronoun-pill pronoun-pill-probe"
-      aria-hidden="true"
-      bind:this={probe}
-      data-text={probeLabel}
-    ></span>
+    {#if !showAll}
+      <span class="pronoun-pill-sizer" aria-hidden="true" bind:this={sizer}>
+        {#each splitPronouns.visible as pronoun, index (index)}
+          <span
+            class="pronoun-pill"
+            lang={pronoun.language ?? undefined}
+            data-text={pronoun.summary}
+          ></span>
+        {/each}
+      </span>
+      <span
+        class="pronoun-pill pronoun-pill-probe"
+        aria-hidden="true"
+        bind:this={probe}
+        data-text={probeLabel}
+      ></span>
+    {/if}
     <span class="pronoun-pill-row">
       {#each splitPronouns.visible.slice(0, shown) as pronoun, index (index)}
         <span class={['pronoun-pill', pillClass]} lang={pronoun.language ?? undefined}
@@ -130,6 +142,14 @@
     white-space: nowrap;
   }
 
+  .pronoun-pill-container.all {
+    height: auto;
+  }
+
+  .pronoun-pill-container.all .pronoun-pill-row {
+    flex-wrap: wrap;
+  }
+
   .pronoun-pill-sizer {
     overflow: hidden;
     pointer-events: none;
@@ -143,7 +163,7 @@
   }
 
   .pronoun-pill {
-    background: var(--pronoun-pill-ground, var(--surface-var-container));
+    background: var(--pronoun-pill-ground, var(--surface-container));
     border-radius: var(--radii-0);
     display: block;
     flex: none;

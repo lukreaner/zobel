@@ -6,12 +6,15 @@
 
   import { i18n } from '#lib/i18n.js';
   import { memberName } from '#lib/rooms/member-listing.js';
+  import { matrixLinkHost } from '#lib/rooms/matrix-link.js';
   import Avatar from '#lib/ui/primitives/Avatar.svelte';
   import Button from '#lib/ui/primitives/Button.svelte';
   import IconButton from '#lib/ui/primitives/IconButton.svelte';
   import Select from '#lib/ui/primitives/Select.svelte';
   import Switch from '#lib/ui/primitives/Switch.svelte';
+  import TextArea from '#lib/ui/primitives/TextArea.svelte';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
+  import { isComposingKey } from '#lib/ui/shortcuts/binding.js';
 
   import {
     acceptsType,
@@ -50,6 +53,7 @@
     onCancel,
   }: Props = $props();
 
+  // eslint-disable-next-line no-restricted-properties -- no profile here
   let botName = $derived(command.sender_name ?? command.sender);
   const uid = $props.id();
   const fieldId = (key: string): string => `bot-command-${uid}-${key}`;
@@ -118,6 +122,16 @@
     errors = Object.fromEntries(Object.entries(errors).filter(([found]) => found !== key));
   }
 
+  function textOf(key: string): string {
+    const value = values[key];
+    return typeof value === 'string' ? value : '';
+  }
+
+  function setText(key: string, value: string): void {
+    values[key] = value;
+    clearError(key);
+  }
+
   function entries(key: string): string[] {
     const value = values[key];
     return Array.isArray(value) ? value : [];
@@ -156,7 +170,7 @@
     for (const parameter of command.parameters) {
       if (parameter.schema.schema_type === 'array') addEntry(parameter.key);
     }
-    const result = buildInvocation(command, values, prefix);
+    const result = buildInvocation(command, values, prefix, matrixLinkHost());
     if (result.kind === 'invalid') {
       errors = result.errors;
       const [first] = Object.keys(result.errors);
@@ -268,12 +282,27 @@
                   }
                 }
                 onkeydown={(event: KeyboardEvent) => {
-                  if (event.key !== 'Enter' || (pending[parameter.key] ?? '').trim() === '') return;
+                  if (
+                    event.key !== 'Enter' ||
+                    isComposingKey(event) ||
+                    (pending[parameter.key] ?? '').trim() === ''
+                  )
+                    return;
                   event.preventDefault();
                   addEntry(parameter.key);
                 }}
               />
             </div>
+          {:else if parameter.multiline}
+            <TextArea
+              {id}
+              rows={3}
+              aria-invalid={error !== null}
+              aria-describedby={describedBy(parameter)}
+              bind:value={
+                () => textOf(parameter.key), (value: string) => setText(parameter.key, value)
+              }
+            />
           {:else}
             <TextInput
               {id}
@@ -284,18 +313,11 @@
               aria-invalid={error !== null}
               aria-describedby={describedBy(parameter)}
               bind:value={
-                () =>
-                  typeof values[parameter.key] === 'string'
-                    ? (values[parameter.key] as string)
-                    : '',
-                (value: string) => {
-                  values[parameter.key] = value;
-                  clearError(parameter.key);
-                }
+                () => textOf(parameter.key), (value: string) => setText(parameter.key, value)
               }
             />
           {/if}
-          {#if !isBooleanParameter(parameter.schema) && !choices}
+          {#if !isBooleanParameter(parameter.schema) && !choices && !parameter.multiline}
             <datalist id="{id}-options">
               {#each optionsFor(parameter) as option (option.value)}
                 <option value={option.value}>{option.label}</option>

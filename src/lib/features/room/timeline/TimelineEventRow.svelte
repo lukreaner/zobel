@@ -1,4 +1,7 @@
 <script lang="ts">
+  import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
+
+  import { i18n } from '#lib/i18n.js';
   import '#lib/ui/primitives/menu.css';
   import './timeline-highlight.css';
   import MessageActions from '../messages/MessageActions.svelte';
@@ -50,6 +53,7 @@
     overrideCosmetics,
     replySender: null,
     hasLinkPreviews: item.link_previews_removed !== true && item.bundled_link_previews.length > 0,
+    linkPreviews: [],
     onToggleReaction,
     onMarkUnread,
     onReply,
@@ -64,14 +68,19 @@
 </script>
 
 <article
-  class={['message', 'event-row', { highlighted }]}
+  class={[
+    'message',
+    'event-row',
+    { highlighted, selecting: row.selecting, 'multi-selected': row.multiSelected },
+  ]}
   data-selected={selected ? 'true' : undefined}
+  data-multi-selected={row.multiSelected ? 'true' : undefined}
   style:--sender-name-color={row.senderColors.nameColor}
   style:--name-color-on-light={row.senderColors.nameColorLight ?? undefined}
   style:--name-color-on-dark={row.senderColors.nameColorDark ?? undefined}
   style:transform={row.swipe.offset === 0
     ? undefined
-    : `translateX(${String(-row.swipe.offset)}px)`}
+    : `translateX(calc(${String(-row.swipe.offset)}px * var(--inline-sign)))`}
   style:transition={row.swipe.dragging ? 'none' : undefined}
   onpointerdown={row.pointerDown}
   onpointermove={row.press.move}
@@ -84,6 +93,19 @@
   oncontextmenu={row.openContextMenu}
   {@attach row.attach}
 >
+  {#if row.selecting && row.actionable}
+    <button
+      type="button"
+      class={['select-toggle', { checked: row.multiSelected }]}
+      role="checkbox"
+      aria-checked={row.multiSelected}
+      aria-label={i18n.t(row.multiSelected ? 'timeline.deselectEvent' : 'timeline.selectEvent')}
+    >
+      <span class="select-box" aria-hidden="true">
+        {#if row.multiSelected}<CheckIcon weight="bold" />{/if}
+      </span>
+    </button>
+  {/if}
   {#if row.swipe.offset > 0}
     <TimelineSwipeAction
       offset={row.swipe.offset}
@@ -120,8 +142,8 @@
         actionable={row.actionable}
         onReact={row.actions.onReact}
         {onToggleReaction}
-        onViewReactions={(index: number) => {
-          row.dialogs.open(item, { kind: 'reactions', active: index });
+        onViewReactions={(key: string) => {
+          row.dialogs.open(item, { kind: 'reactions', active: key });
         }}
       />
     </div>
@@ -147,7 +169,7 @@
     display: block;
     margin-inline: calc(-1 * var(--page-gutter));
     overflow-wrap: anywhere;
-    padding: 0 var(--page-gutter);
+    padding: 0 var(--page-gutter) 0 calc(var(--page-gutter) + var(--selection-gutter));
     position: relative;
   }
 
@@ -183,7 +205,7 @@
     box-shadow: inset 0 0 0 var(--border-width) var(--surface-container-line);
   }
 
-  .message:has(:focus-visible):not([data-selected='true']) {
+  .message:has(:focus-visible):not([data-selected='true'], [data-multi-selected='true']) {
     background: var(--bg-container-hover);
     border-radius: var(--radius);
     color: var(--bg-on-container);

@@ -15,6 +15,7 @@
   import { usePersonaStore } from '#lib/personas/personas.svelte.js';
   import { useRoomList } from '#lib/rooms/room-list.svelte.js';
   import { RoomTimeline } from '#lib/rooms/timeline.svelte.js';
+  import { useThreadSidebar } from '#lib/features/sidebar/thread-sidebar.svelte.js';
   import PanelHeader from '#lib/ui/primitives/PanelHeader.svelte';
   import PanelHeaderButton from '#lib/ui/primitives/PanelHeaderButton.svelte';
   import ResizeHandle from '#lib/ui/primitives/ResizeHandle.svelte';
@@ -28,6 +29,8 @@
   import { mediaViewerState } from '#lib/ui/media/media-viewer-state.svelte.js';
   import { replyPreviewBody } from '../messages/reply-preview.js';
   import TimelineList from '../timeline/TimelineList.svelte';
+  import ThreadSidebarActions from './ThreadSidebarActions.svelte';
+  import type { TimelineCallbacks } from '../timeline/timeline-row.svelte.js';
   import {
     clampThreadPanelWidth,
     MIN_THREAD_PANEL_WIDTH,
@@ -52,6 +55,7 @@
     canPin?: boolean;
     encrypted?: boolean | null;
     onClose: () => void;
+    onRead?: (rootId: string, item: TimelineItemView) => void;
     onSenderProfile?: (userId: string, anchor: HTMLElement) => void;
     onMatrixLink?: (link: MatrixLink, anchor: HTMLAnchorElement) => void;
     onCopyLink?: (eventId: string) => void;
@@ -73,6 +77,7 @@
     canPin = true,
     encrypted = null,
     onClose,
+    onRead,
     onSenderProfile,
     onMatrixLink,
     onCopyLink,
@@ -93,6 +98,7 @@
   const core = useCoreClient();
   const personas = usePersonaStore();
   const roomList = useRoomList();
+  const threadSidebar = useThreadSidebar();
   const timeline = new RoomTimeline(core);
   const conversation = new Conversation({
     core,
@@ -103,8 +109,12 @@
     encrypted: () => encrypted,
     publicRoom: () => roomList.byId(roomId)?.join_rule === 'public',
     threadRoot: untrack(() => rootEventId),
+    canRedactOwn: () => canRedactOwn,
     beforeSend: () => returnToThread(),
-    afterSend: (id) => donateSentMessage(core, roomList.byId(id)),
+    afterSend: (id) => {
+      donateSentMessage(core, roomList.byId(id));
+      threadSidebar?.noteReply(id, rootEventId, original);
+    },
   });
 
   function returnToThread(): Promise<void> {
@@ -121,7 +131,8 @@
 
   $effect(() => {
     const target = focusEventId;
-    if (target === null) {
+    // The root's own context is the room around it, which takes no thread actions.
+    if (target === null || target === rootEventId) {
       void timeline.startThread(roomId, rootEventId);
       return;
     }
@@ -160,6 +171,12 @@
     void timeline.stop();
   });
 
+  /** The list holds its place for a focus it cannot find, so it gets the root once that has loaded. */
+  let listFocus = $derived(
+    focusEventId === rootEventId && !timeline.items.some((item) => item.event_id === rootEventId)
+      ? null
+      : focusEventId
+  );
   let original = $derived(
     timeline.items.find((item) => item.event_id === rootEventId) ?? rootMessage
   );
@@ -178,6 +195,18 @@
   }
 
   async function markRead(eventId: string): Promise<void> {
+    const expectedReplies =
+      original?.thread_summary?.num_replies ?? rootMessage?.thread_summary?.num_replies ?? 0;
+    if (
+      eventId === rootEventId &&
+      expectedReplies > 0 &&
+      timeline.backwardPagination !== 'end' &&
+      !timeline.items.some((entry) => entry.event_id !== null && entry.event_id !== rootEventId)
+    ) {
+      return;
+    }
+    const item = timeline.items.find((entry) => entry.event_id === eventId);
+    if (item) onRead?.(rootEventId, item);
     await core.rpc.timeline.markRead({
       room_id: roomId,
       event_id: eventId,
@@ -186,6 +215,37 @@
       fully_read: false,
     });
   }
+  const timelineCallbacks: TimelineCallbacks = {
+    get onSenderProfile() {
+      return onSenderProfile;
+    },
+    get onMatrixLink() {
+      return onMatrixLink;
+    },
+    onMentionUser: (userId, name) => composer?.insertMention(userId, name),
+    get onCopyLink() {
+      return onCopyLink;
+    },
+    onOpenMedia: (eventId) =>
+      mediaViewerState.openPanel(timelineMediaItems(timeline.items), eventId, (target) => {
+        timelineList?.jumpToEvent(target);
+      }),
+    get onReply() {
+      return readOnly ? undefined : conversation.reply;
+    },
+    onCancelContext: conversation.clearContext,
+    get onEdit() {
+      return readOnly ? undefined : conversation.edit;
+    },
+    onDelete: conversation.redact,
+    get onToggleReaction() {
+      return canReact ? conversation.toggleReaction : undefined;
+    },
+    onVotePoll: conversation.votePoll,
+    onEndPoll: conversation.endPoll,
+    onRetrySend: conversation.retrySend,
+    onCancelSend: conversation.cancelSend,
+  };
 </script>
 
 <svelte:window
@@ -216,22 +276,19 @@
   ontouchend={() => swipe.finish(false)}
   ontouchcancel={() => swipe.finish(true)}
 >
+  {#snippet backButton()}
+    <PanelHeaderButton label={backLabel ?? i18n.t('timeline.backToConversation')} onclick={onClose}>
+      <BackIcon class="mirror-rtl" />
+    </PanelHeaderButton>
+  {/snippet}
+
   <PanelHeader
     class="thread-header"
     title={topic || i18n.t('timeline.thread')}
     titleSize="h1"
     subtitle={roomName ?? ''}
+    prefix={sidePanel ? undefined : backButton}
   >
-    {#snippet prefix()}
-      <PanelHeaderButton
-        label={sidePanel
-          ? i18n.t('timeline.threadClose')
-          : (backLabel ?? i18n.t('timeline.backToConversation'))}
-        onclick={onClose}
-      >
-        {#if sidePanel}<XIcon />{:else}<BackIcon class="mirror-rtl" />{/if}
-      </PanelHeaderButton>
-    {/snippet}
     {#snippet suffix()}
       {#if timeline.items.some((item) => item.event_id === rootEventId)}
         <PanelHeaderButton
@@ -239,6 +296,12 @@
           onclick={() => timelineList?.jumpToEvent(rootEventId)}
         >
           <ArrowUpIcon />
+        </PanelHeaderButton>
+      {/if}
+      <ThreadSidebarActions {roomId} rootId={rootEventId} root={original} />
+      {#if sidePanel}
+        <PanelHeaderButton label={i18n.t('timeline.threadClose')} onclick={onClose}>
+          <XIcon />
         </PanelHeaderButton>
       {/if}
     {/snippet}
@@ -272,7 +335,7 @@
     editEventId={conversation.context?.kind === 'edit' ? conversation.context.eventId : null}
     inlineEditor={conversation.inlineEdit ? inlineEditor : undefined}
     {timeline}
-    {focusEventId}
+    focusEventId={listFocus}
     threadRootId={rootEventId}
     onRetryLoad={() => timeline.retry()}
     onJumpToEvent={jumpToEvent}
@@ -284,30 +347,19 @@
     {canRedactOthers}
     {canPin}
     {encrypted}
-    {onSenderProfile}
-    {onMatrixLink}
-    onMentionUser={(userId, name) => composer?.insertMention(userId, name)}
-    {onCopyLink}
-    onOpenMedia={(eventId) =>
-      mediaViewerState.openPanel(timelineMediaItems(timeline.items), eventId, (target) => {
-        timelineList?.jumpToEvent(target);
-      })}
+    callbacks={timelineCallbacks}
     onRequestHistory={requestHistory}
     onRequestFuture={requestFuture}
     onRead={markRead}
-    onReply={readOnly ? undefined : conversation.reply}
-    onCancelContext={conversation.clearContext}
-    onEdit={readOnly ? undefined : conversation.edit}
-    onDelete={conversation.redact}
-    onToggleReaction={canReact ? conversation.toggleReaction : undefined}
-    onVotePoll={conversation.votePoll}
-    onEndPoll={conversation.endPoll}
-    onRetrySend={conversation.retrySend}
-    onCancelSend={conversation.cancelSend}
     currentUserId={core.session?.user_id ?? null}
   />
 
-  <div class="thread-composer" onfocusin={(event) => timelineList?.composerFocused(event)}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="thread-composer"
+    onfocusin={(event) => timelineList?.composerFocused(event)}
+    onkeydown={(event) => timelineList?.composerKeydown(event)}
+  >
     <ConversationComposer
       bind:this={composer}
       {conversation}

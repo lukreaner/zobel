@@ -12,10 +12,15 @@ const appVersion =
   JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const release = process.argv.includes('--release');
 const out = join(here, 'dist');
+const addons = process.platform === 'freebsd' ? ['sable_node'] : ['sable_node', 'sable_audiofox'];
 
 execFileSync(
   'cargo',
-  ['build', '-p', 'sable-node', '-p', 'sable-audiofox', ...(release ? ['--release'] : [])],
+  [
+    'build',
+    ...addons.flatMap((name) => ['-p', name.replace('_', '-')]),
+    ...(release ? ['--release'] : []),
+  ],
   {
     cwd: root,
     stdio: 'inherit',
@@ -24,13 +29,17 @@ execFileSync(
 
 const target = process.env.CARGO_TARGET_DIR ?? join(root, 'target');
 mkdirSync(out, { recursive: true });
-for (const name of ['sable_node', 'sable_audiofox']) {
+for (const name of addons) {
   const library = {
     darwin: `lib${name}.dylib`,
+    freebsd: `lib${name}.so`,
     linux: `lib${name}.so`,
     win32: `${name}.dll`,
   }[process.platform];
-  copyFileSync(join(target, release ? 'release' : 'debug', library), join(out, `${name}.node`));
+  const built = join(target, release ? 'release' : 'debug');
+  copyFileSync(join(built, library), join(out, `${name}.node`));
+  const pdb = join(built, `${name}.pdb`);
+  if (process.platform === 'win32' && existsSync(pdb)) copyFileSync(pdb, join(out, `${name}.pdb`));
 }
 
 if (process.platform === 'linux') {

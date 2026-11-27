@@ -127,12 +127,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => return Err("usage: generate-types [--check]".into()),
     };
 
-    let mut types = specta::Types::default()
+    let mut types = Types::default()
         .register::<RpcError>()
         .register::<CoreEvent>()
         .register::<AttachmentInfoView>()
         .register::<SendAttachmentRequest>()
         .register::<SendGalleryRequest>()
+        .register::<sable_model::markdown::ComposerContent>()
+        .register::<sable_model::markdown::ComposerPill>()
         .register::<sable_model::emote_picker::EmoteRecentsInput>()
         .register::<sable_model::emote_picker::EmoteRecents>()
         .register::<sable_model::search_query::ParsedQuery>()

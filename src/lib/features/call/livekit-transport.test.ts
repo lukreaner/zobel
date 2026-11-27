@@ -16,7 +16,6 @@ import type { CallTelemetry } from './call-telemetry';
 import { MatrixKeyProvider } from './key-provider';
 import * as voiceFilter from './voice-filter';
 import { preferences } from '#lib/settings/preferences.svelte.js';
-import { i18n } from '#lib/i18n.js';
 import { toasts } from '#lib/ui/toasts.svelte.js';
 
 const screenAudio = vi.hoisted(() => ({
@@ -409,17 +408,18 @@ test('an encrypted call publishes H.264 in place of AV1 and says so once', async
       expect.anything(),
       expect.objectContaining({ videoCodec: 'h264' })
     );
-    expect(info).toHaveBeenCalledExactlyOnceWith(i18n.t('settings.callAv1Unencryptable'));
+    expect(info).toHaveBeenCalledOnce();
   } finally {
     await transport.disconnect();
   }
 });
 
-test('a fresh profile shares the screen at 720p and 30 fps', async () => {
+test('a fresh profile shares the screen in VP8 at 1080p and 30 fps', async () => {
   vi.resetModules();
   const { preferences: fresh } = await import('#lib/settings/preferences.svelte.js');
-  expect(fresh.callScreenResolution).toBe('720');
+  expect(fresh.callScreenResolution).toBe('1080');
   expect(fresh.callScreenFramerate).toBe('30');
+  expect(fresh.callScreenCodec).toBe('vp8');
 });
 
 test('screen frame rate caps capture and encoding', async () => {

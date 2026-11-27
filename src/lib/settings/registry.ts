@@ -4,21 +4,24 @@ import GifIcon from 'phosphor-svelte/lib/GifIcon';
 import GridFourIcon from 'phosphor-svelte/lib/GridFourIcon';
 import LockKeyIcon from 'phosphor-svelte/lib/LockKeyIcon';
 import PencilSimpleIcon from 'phosphor-svelte/lib/PencilSimpleIcon';
-import SpeakerHighIcon from 'phosphor-svelte/lib/SpeakerHighIcon';
 import SmileyIcon from 'phosphor-svelte/lib/SmileyIcon';
 import UploadSimpleIcon from 'phosphor-svelte/lib/UploadSimpleIcon';
 import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
 import type { FreeTextPreference, Preferences, RangePreference } from './definitions';
+import { accessibilityCategory } from './registry/accessibility';
 import { appearanceCategory } from './registry/appearance';
 import { callsCategory } from './registry/calls';
 import { composerCategory } from './registry/composer';
 import { desktopCategories } from './registry/desktop';
 import { developerCategory } from './registry/developer';
+import { languageCategory } from './registry/language';
 import { mediaCategory } from './registry/media';
 import { notificationsCategory } from './registry/notifications';
 import { settingsPanels } from './registry/panels';
 import { personasCategory } from './registry/personas';
 import { privacyCategory } from './registry/privacy';
+import { searchCategory } from './registry/search';
+import { sidebarCategory } from './registry/sidebar';
 import { timelineCategory } from './registry/timeline';
 
 export { enterSettingLabels } from './registry/composer';
@@ -43,12 +46,21 @@ export interface SettingOption {
 
 export interface SettingsContext {
   oauth: boolean;
+  qrGrant: boolean;
 }
 
 export type SettingsGate = (context: SettingsContext) => boolean;
 
-export function settingsContext(core: { oauthMetadata: unknown }): SettingsContext {
-  return { oauth: core.oauthMetadata !== null };
+export function settingShown(setting: SettingsTargetDefinition, preferences: Preferences): boolean {
+  const when = setting.shownWhen;
+  return when === undefined || preferences[when.key] === when.value;
+}
+
+export function settingsContext(core: {
+  oauthMetadata: unknown;
+  qrGrantSupported: boolean;
+}): SettingsContext {
+  return { oauth: core.oauthMetadata !== null, qrGrant: core.qrGrantSupported };
 }
 
 export interface SettingsTargetDefinition {
@@ -60,6 +72,7 @@ export interface SettingsTargetDefinition {
   description?: string;
   /** Left out entirely where the platform has nothing for it to show. */
   supported?: SettingsGate;
+  shownWhen?: { key: SelectPreference; value: string };
   terms?: readonly string[];
 }
 
@@ -98,7 +111,13 @@ export interface RangeSetting extends BaseSetting {
   onChange?: (value: number) => void;
 }
 
-export type SettingDefinition = BooleanSetting | SelectSetting | RangeSetting;
+export interface TextSetting extends BaseSetting {
+  type: 'text';
+  key: FreeTextPreference;
+  placeholder?: string;
+}
+
+export type SettingDefinition = BooleanSetting | SelectSetting | RangeSetting | TextSetting;
 export type SettingType = SettingDefinition['type'];
 
 export interface SettingsSectionDefinition {
@@ -128,9 +147,9 @@ export const STANDALONE_PAGE_NAMES: Partial<Record<string, string>> = {
 };
 
 const MERGED_SECTIONS: Record<string, string> = {
-  accessibility: 'appearance',
+  sounds: 'notifications',
   sync: SETTINGS_ACCOUNT_SECTION,
-  time: 'timeline',
+  time: 'language',
   updates: 'about',
 };
 
@@ -277,19 +296,16 @@ const categories: SettingsCategory[] = [
     ],
   },
   appearanceCategory,
+  accessibilityCategory,
+  languageCategory,
+  sidebarCategory,
   timelineCategory,
   composerCategory,
   privacyCategory,
   mediaCategory,
   notificationsCategory,
   callsCategory,
-  {
-    id: 'sounds',
-    name: 'sounds.title',
-    icon: SpeakerHighIcon,
-    sections: [{ id: 'volumes', name: 'sounds.volumeCategory' }],
-    items: [],
-  },
+  searchCategory,
   personasCategory,
   ...desktopCategories,
   developerCategory,

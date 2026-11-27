@@ -2,7 +2,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { previewableLinks, imageMimeFromUrl } from './link-preview';
+import {
+  previewableLinks,
+  imageMimeFromUrl,
+  outgoingPreviewableLinks,
+  previewGif,
+  previewWhitelistEntry,
+} from './link-preview';
 
 describe('previewableLinks', () => {
   it('skips a link wrapped in angle brackets, as Discord does', () => {
@@ -121,6 +127,21 @@ describe('previewableLinks', () => {
   });
 });
 
+describe('outgoingPreviewableLinks', () => {
+  it('finds bare and explicit links in order, excluding hidden text and link labels', () => {
+    const html =
+      '<p><strong>See</strong> https://example.org/a ' +
+      '<code>https://example.org/code</code> ' +
+      '<span data-mx-spoiler>https://example.org/spoiler</span> ' +
+      '<a href="https://example.org/b">https://example.org/label</a> ' +
+      '&lt;https://example.org/quiet&gt;</p>';
+    expect(outgoingPreviewableLinks(html, '')).toEqual([
+      'https://example.org/a',
+      'https://example.org/b',
+    ]);
+  });
+});
+
 describe('imageMimeFromUrl', () => {
   it('reads the extension of the path, not of the query', () => {
     expect(imageMimeFromUrl('https://media.example/a/anim.gif?name=x.png')).toBe('image/gif');
@@ -129,5 +150,58 @@ describe('imageMimeFromUrl', () => {
   it('ignores an extension it does not know, and a malformed url', () => {
     expect(imageMimeFromUrl('https://example.org/a.png')).toBeNull();
     expect(imageMimeFromUrl('not a url')).toBeNull();
+  });
+});
+
+describe('previewGif', () => {
+  const link = 'https://gif.example.org/tweet_video/clip.gif';
+
+  it('offers an uploaded gif image for download and favourites', () => {
+    const gif = previewGif([
+      { ...previewWhitelistEntry(link), image: 'mxc://example.org/clip', image_mime: 'image/gif' },
+    ]);
+
+    expect(gif?.media).toEqual({
+      source: 'mxc://example.org/clip',
+      filename: 'clip.gif',
+      mime: 'image/gif',
+    });
+    expect(gif?.favorite?.mediaUrl).toBe('mxc://example.org/clip');
+  });
+
+  it('downloads the looping video of a gif preview but cannot favourite it', () => {
+    const gif = previewGif([
+      {
+        ...previewWhitelistEntry(link),
+        image: 'mxc://example.org/poster',
+        image_mime: 'image/jpeg',
+        video: {
+          source: 'mxc://example.org/clip-video',
+          mime: 'video/mp4',
+          width: null,
+          height: null,
+          gif: true,
+        },
+      },
+    ]);
+
+    expect(gif?.media).toEqual({
+      source: 'mxc://example.org/clip-video',
+      filename: 'clip.mp4',
+      mime: 'video/mp4',
+    });
+    expect(gif?.favorite).toBeUndefined();
+  });
+
+  it('ignores a preview that is not a gif', () => {
+    expect(
+      previewGif([
+        {
+          ...previewWhitelistEntry('https://example.org/post'),
+          image: 'mxc://example.org/still',
+          image_mime: 'image/png',
+        },
+      ])
+    ).toBeNull();
   });
 });

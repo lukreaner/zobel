@@ -10,6 +10,7 @@ use super::membership::{self, CallMember, StickyMemberships};
 use super::runtime::merge_sticky;
 use super::{sfu, sticky};
 use crate::Core;
+use crate::SignedIn;
 use crate::protocol::{CallMode, CallModeReason, CallSessionId, RpcCode, RpcError};
 
 fn select_mode(
@@ -111,7 +112,7 @@ fn select_wire(
 }
 
 async fn resolve_service(
-    core: &Core,
+    core: &SignedIn,
     room: &Room,
     members: &[CallMember],
     configured: Option<String>,
@@ -148,19 +149,29 @@ fn own_identity(
     user: &UserId,
     device: &DeviceId,
     mode: CallMode,
-    wire: membership::RtcWire,
+    service: &str,
+    sticky_identity: bool,
 ) -> (String, String) {
-    if mode != CallMode::Matrix2 {
-        let identity = sfu::livekit_identity(user, device);
-        return (identity.clone(), identity);
-    }
-    let member_id = TransactionId::new().to_string();
-    let identity = if wire == membership::RtcWire::Stable {
-        membership::stable_identity(user, &member_id)
+    let member_id = if mode == CallMode::Matrix2 {
+        TransactionId::new().to_string()
     } else {
+        sfu::livekit_identity(user, device)
+    };
+    let identity = if sticky_identity && !membership::is_sfu_url(service) {
         membership::sticky_identity(user, device, &member_id)
+    } else {
+        membership::backend_identity(user, device, &member_id, service)
     };
     (identity, member_id)
+}
+
+// Older Element Call and Sable only find us by the sticky identity.
+fn joins_older_call(user: &UserId, device: &DeviceId, members: &[CallMember]) -> bool {
+    let mut peers = members
+        .iter()
+        .filter(|member| member.mode == CallMode::Matrix2 && !member.is_own(user, device))
+        .peekable();
+    peers.peek().is_some() && peers.all(CallMember::uses_sticky_identity)
 }
 
 fn own_member(
@@ -170,8 +181,9 @@ fn own_member(
     wire: membership::RtcWire,
     service: String,
     focus_server: Option<OwnedServerName>,
+    sticky_identity: bool,
 ) -> CallMember {
-    let (identity, member_id) = own_identity(&user, &device, mode, wire);
+    let (identity, member_id) = own_identity(&user, &device, mode, &service, sticky_identity);
     let now = crate::now_ms();
     CallMember {
         user_id: user,
@@ -192,7 +204,7 @@ fn own_member(
 }
 
 pub(super) async fn discover(
-    core: &Core,
+    core: &SignedIn,
     room: &Room,
     session: CallSessionId,
     configured: Option<String>,
@@ -201,7 +213,7 @@ pub(super) async fn discover(
     let client = room.client();
     let user = client.user_id().ok_or(RpcCode::NotLoggedIn)?.to_owned();
     let device = client.device_id().ok_or(RpcCode::NotLoggedIn)?.to_owned();
-    let encrypted = core.room_is_encrypted(room).await?;
+    let encrypted = core.core().room_is_encrypted(room).await?;
     let features = client.unstable_features().await.unwrap_or_default();
     let (mut sticky_members, sticky_sync) = if features.contains(&"org.matrix.msc4354".into()) {
         sync_sticky(room, session, encrypted).await
@@ -219,7 +231,7 @@ pub(super) async fn discover(
         Vec::new()
     };
     let wire = select_wire(stable_supported, &sticky_candidates, &stable_services);
-    let slot_closed = sticky_sync.is_some() && room_slot_closed(core, room, wire).await?;
+    let slot_closed = sticky_sync.is_some() && room_slot_closed(core.core(), room, wire).await?;
     let mut members = membership::active_members(room).await;
     if !slot_closed {
         merge_sticky(
@@ -274,7 +286,16 @@ pub(super) async fn discover(
         wire,
     )
     .await?;
-    let own = own_member(user, device, mode, wire, service, focus_server);
+    let sticky_identity = mode == CallMode::Matrix2 && joins_older_call(&user, &device, &members);
+    let own = own_member(
+        user,
+        device,
+        mode,
+        wire,
+        service,
+        focus_server,
+        sticky_identity,
+    );
     Ok(Discovered {
         own,
         members,

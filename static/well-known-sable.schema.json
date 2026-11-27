@@ -25,6 +25,14 @@
         "themeUrl": {
           "type": "string",
           "pattern": "^(https://|[^:]*$)"
+        },
+        "lightThemeUrl": {
+          "type": "string",
+          "pattern": "^(https://|[^:]*$)"
+        },
+        "darkThemeUrl": {
+          "type": "string",
+          "pattern": "^(https://|[^:]*$)"
         }
       }
     },
@@ -193,6 +201,19 @@
           ],
           "default": "system"
         },
+        "deploymentTheme": {
+          "title": "Use this server’s theme",
+          "type": "boolean",
+          "default": true
+        },
+        "chatBackgroundImage": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundColor": {
+          "type": "string",
+          "default": ""
+        },
         "fontFamily": {
           "type": "string",
           "default": ""
@@ -281,6 +302,11 @@
           ],
           "default": "always"
         },
+        "showEncryptionStatusIcon": {
+          "title": "Show encryption status icon",
+          "type": "boolean",
+          "default": true
+        },
         "voiceParticipantPlacement": {
           "title": "Voice room participants",
           "enum": [
@@ -294,6 +320,14 @@
           "title": "Room banners above the list",
           "type": "boolean",
           "default": true
+        },
+        "bannerFit": {
+          "title": "Banner size",
+          "enum": [
+            "fixed",
+            "image"
+          ],
+          "default": "fixed"
         },
         "showDmTopics": {
           "title": "Show topics in direct messages",
@@ -332,7 +366,7 @@
           "default": "3"
         },
         "showHome": {
-          "title": "All rooms in the sidebar",
+          "title": "Show Home with all rooms",
           "type": "boolean",
           "default": false
         },
@@ -391,6 +425,11 @@
           "type": "boolean",
           "default": true
         },
+        "showActiveThreadsInSidebar": {
+          "title": "Show recent threads in the sidebar",
+          "type": "boolean",
+          "default": true
+        },
         "hour24Clock": {
           "title": "24-hour clock",
           "type": "boolean",
@@ -439,6 +478,11 @@
           "title": "Hide members in read-only rooms",
           "type": "boolean",
           "default": true
+        },
+        "hideSentBeforeJoined": {
+          "title": "Hide messages sent before you joined",
+          "type": "boolean",
+          "default": false
         },
         "showTombstoneEvents": {
           "title": "Show removed-message placeholders",
@@ -549,6 +593,7 @@
         "roomSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -557,6 +602,7 @@
         "directSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -738,6 +784,20 @@
           "title": "Combine attachments into a gallery",
           "type": "boolean",
           "default": false
+        },
+        "matrixLinkSelector": {
+          "title": "External Matrix links",
+          "enum": [
+            "sable",
+            "matrix",
+            "custom"
+          ],
+          "default": "sable"
+        },
+        "matrixLinkCustom": {
+          "title": "Custom link host",
+          "type": "string",
+          "default": ""
         },
         "personaPicker": {
           "title": "Show profile picker in the composer",
@@ -1029,6 +1089,19 @@
           ],
           "default": "system"
         },
+        "deploymentTheme": {
+          "title": "Use this server’s theme",
+          "type": "boolean",
+          "default": true
+        },
+        "chatBackgroundImage": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundColor": {
+          "type": "string",
+          "default": ""
+        },
         "fontFamily": {
           "type": "string",
           "default": ""
@@ -1117,6 +1190,11 @@
           ],
           "default": "always"
         },
+        "showEncryptionStatusIcon": {
+          "title": "Show encryption status icon",
+          "type": "boolean",
+          "default": true
+        },
         "voiceParticipantPlacement": {
           "title": "Voice room participants",
           "enum": [
@@ -1130,6 +1208,14 @@
           "title": "Room banners above the list",
           "type": "boolean",
           "default": true
+        },
+        "bannerFit": {
+          "title": "Banner size",
+          "enum": [
+            "fixed",
+            "image"
+          ],
+          "default": "fixed"
         },
         "showDmTopics": {
           "title": "Show topics in direct messages",
@@ -1168,7 +1254,7 @@
           "default": "3"
         },
         "showHome": {
-          "title": "All rooms in the sidebar",
+          "title": "Show Home with all rooms",
           "type": "boolean",
           "default": false
         },
@@ -1227,6 +1313,11 @@
           "type": "boolean",
           "default": true
         },
+        "showActiveThreadsInSidebar": {
+          "title": "Show recent threads in the sidebar",
+          "type": "boolean",
+          "default": true
+        },
         "hour24Clock": {
           "title": "24-hour clock",
           "type": "boolean",
@@ -1275,6 +1366,11 @@
           "title": "Hide members in read-only rooms",
           "type": "boolean",
           "default": true
+        },
+        "hideSentBeforeJoined": {
+          "title": "Hide messages sent before you joined",
+          "type": "boolean",
+          "default": false
         },
         "showTombstoneEvents": {
           "title": "Show removed-message placeholders",
@@ -1385,6 +1481,7 @@
         "roomSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -1393,6 +1490,7 @@
         "directSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -1574,6 +1672,20 @@
           "title": "Combine attachments into a gallery",
           "type": "boolean",
           "default": false
+        },
+        "matrixLinkSelector": {
+          "title": "External Matrix links",
+          "enum": [
+            "sable",
+            "matrix",
+            "custom"
+          ],
+          "default": "sable"
+        },
+        "matrixLinkCustom": {
+          "title": "Custom link host",
+          "type": "string",
+          "default": ""
         },
         "personaPicker": {
           "title": "Show profile picker in the composer",

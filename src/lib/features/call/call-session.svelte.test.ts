@@ -53,6 +53,7 @@ class MockAudioContext {
 }
 
 import { CallSession, TALK_RELEASE_DELAY_MS, voiceStates } from './call-session.svelte.js';
+import { collectCallSnapshot } from './call-snapshot';
 import { MatrixKeyProvider } from './key-provider';
 import type { CallTransportConnectOptions } from './call-transport';
 import { resetCallOwner } from './call-owner';
@@ -187,6 +188,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   sentry.captureException.mockClear();
 });
 
@@ -261,6 +263,7 @@ test('a call tears down after a successful join reports disconnected', async () 
 
   await session.join('!room:example.org', { microphone: true, camera: false });
   expect(session.lifecycle).toBe('active');
+  sounds.played.length = 0;
 
   emitTransportState({ ...idleTransportState(), connection: 'disconnected' });
 
@@ -272,6 +275,7 @@ test('a call tears down after a successful join reports disconnected', async () 
     expect(leaveCall).toHaveBeenCalledOnce();
     expect(transport.disconnect).toHaveBeenCalledOnce();
   });
+  expect(sounds.played).toEqual(['call_leave']);
 
   const retry = new CallSession(client, { createTransport: () => transport });
   await retry.join('!other:example.org', { microphone: true, camera: false });
@@ -313,10 +317,12 @@ test('a connect promise does not make the session active while transport is stil
   expect(session.transport.connection).toBe('connecting');
   expect(session.lifecycle).toBe('connecting');
 
+  sounds.played.length = 0;
   resolveConnect();
   await joining;
   expect(session.lifecycle).toBe('failed');
   expect(session.failure).toBe('setup-failed');
+  expect(sounds.played).toEqual([]);
 });
 
 test('reconnecting and recovering leaves an active call intact', async () => {
@@ -1204,6 +1210,27 @@ test('a camera that cannot start is reported, not swallowed', async () => {
   expect(session.deviceError).toBe('camera');
   session.clearDeviceError();
   expect(session.deviceError).toBeNull();
+});
+
+test('diagnostics name why the microphone could not start until the warning clears', async () => {
+  vi.stubGlobal('navigator', {
+    mediaDevices: { enumerateDevices: () => Promise.resolve([]) },
+    permissions: { query: () => Promise.resolve({ state: 'granted' }) },
+  });
+  const { client, transport } = harness();
+  const session = new CallSession(client, { createTransport: () => transport });
+  await session.join('!room:example.org', { microphone: false, camera: false });
+  vi.mocked(transport.setMicrophoneEnabled).mockRejectedValueOnce(
+    new DOMException('Could not start audio source', 'NotReadableError')
+  );
+
+  await session.setMicrophoneEnabled(true);
+
+  expect(session.deviceError).toBe('microphone');
+  expect((await collectCallSnapshot(session)).devices?.lastError).toBe('NotReadableError');
+  session.clearDeviceError();
+  expect((await collectCallSnapshot(session)).devices?.lastError).toBeNull();
+  await session.leave();
 });
 
 test('camera warnings expire without retrying', async () => {

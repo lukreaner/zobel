@@ -7,9 +7,9 @@ use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 use matrix_sdk_ui::notification_client::NotificationProcessSetup;
 use serde::{Deserialize, Serialize};
 
-use super::{Handler, Json};
+use super::{Handler, SessionHandler, Json};
 use crate::protocol::{RpcCode, RpcError, DefaultNotificationModesView, EventNotificationView, EventNotificationsView, InboxItemView, KeywordNotificationView, MentionNotificationModeView, MentionNotificationsView, MentionRuleView, NotificationModeView, NotificationSettingsView, NotificationView, PushFetchView};
-use crate::{Core, ResultExt, notifications, push_rules};
+use crate::{Core, ResultExt, notifications, push_rules, SignedIn};
 
 domain! {
     settings,
@@ -56,17 +56,17 @@ pub struct SettingsParams {
     pub room_id: OwnedRoomId,
 }
 
-impl Handler for SettingsParams {
+impl SessionHandler for SettingsParams {
     type Ok = NotificationSettingsView;
 
-    async fn run(self, core: &Arc<Core>) -> Result<NotificationSettingsView, RpcError> {
-        let room = core.room(&self.room_id).await?;
-        let rules = core.push_rules().await?.snapshot().await;
+    async fn run(self, session: &SignedIn) -> Result<NotificationSettingsView, RpcError> {
+        let room = session.room(&self.room_id)?;
+        let rules = session.push_rules().await?.snapshot();
 
         Ok(push_rules::room_settings(
             &rules,
             &self.room_id,
-            notifications::uses_direct_push_rules(&room),
+            notifications::uses_direct_push_rules(&rules, &room),
         ))
     }
 }
@@ -75,12 +75,12 @@ impl Handler for SettingsParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct DefaultModesParams {}
 
-impl Handler for DefaultModesParams {
+impl SessionHandler for DefaultModesParams {
     type Ok = DefaultNotificationModesView;
 
-    async fn run(self, core: &Arc<Core>) -> Result<DefaultNotificationModesView, RpcError> {
+    async fn run(self, session: &SignedIn) -> Result<DefaultNotificationModesView, RpcError> {
         Ok(push_rules::default_modes(
-            &core.push_rules().await?.snapshot().await,
+            &session.push_rules().await?.snapshot(),
         ))
     }
 }
@@ -89,12 +89,12 @@ impl Handler for DefaultModesParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct MentionNotificationsParams {}
 
-impl Handler for MentionNotificationsParams {
+impl SessionHandler for MentionNotificationsParams {
     type Ok = MentionNotificationsView;
 
-    async fn run(self, core: &Arc<Core>) -> Result<MentionNotificationsView, RpcError> {
+    async fn run(self, session: &SignedIn) -> Result<MentionNotificationsView, RpcError> {
         Ok(push_rules::mention_notifications(
-            &core.push_rules().await?.snapshot().await,
+            &session.push_rules().await?.snapshot(),
         ))
     }
 }
@@ -103,12 +103,12 @@ impl Handler for MentionNotificationsParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct EventNotificationsParams {}
 
-impl Handler for EventNotificationsParams {
+impl SessionHandler for EventNotificationsParams {
     type Ok = EventNotificationsView;
 
-    async fn run(self, core: &Arc<Core>) -> Result<EventNotificationsView, RpcError> {
+    async fn run(self, session: &SignedIn) -> Result<EventNotificationsView, RpcError> {
         Ok(push_rules::event_notifications(
-            &core.push_rules().await?.snapshot().await,
+            &session.push_rules().await?.snapshot(),
         ))
     }
 }
@@ -117,12 +117,12 @@ impl Handler for EventNotificationsParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct MasterMuteParams {}
 
-impl Handler for MasterMuteParams {
+impl SessionHandler for MasterMuteParams {
     type Ok = Option<bool>;
 
-    async fn run(self, core: &Arc<Core>) -> Result<Option<bool>, RpcError> {
+    async fn run(self, session: &SignedIn) -> Result<Option<bool>, RpcError> {
         Ok(push_rules::master_muted(
-            &core.push_rules().await?.snapshot().await,
+            &session.push_rules().await?.snapshot(),
         ))
     }
 }
@@ -136,22 +136,24 @@ pub struct NotificationParams {
     pub event_id: OwnedEventId,
 }
 
-impl Handler for NotificationParams {
+impl SessionHandler for NotificationParams {
     /// `null` when the event notifies nobody, or is gone, or cannot be read.
     type Ok = Option<NotificationView>;
 
-    async fn run(self, core: &Arc<Core>) -> Result<Option<NotificationView>, RpcError> {
-        let client = core.client().await?;
+    async fn run(self, session: &SignedIn) -> Result<Option<NotificationView>, RpcError> {
+        let client = session.client();
         let setup = NotificationProcessSetup::SingleProcess {
-            sync_service: core.sync_service().await?,
+            sync_service: session.sync_service(),
         };
 
-        let mut notification =
-            notifications::notification(&client, setup, &self.room_id, &self.event_id).await;
-        if let Some(notification) = notification.as_mut() {
-            core.nicknames().apply_notification(notification);
-        }
-        Ok(notification)
+        Ok(notifications::notification(
+            client,
+            setup,
+            &self.room_id,
+            &self.event_id,
+            &session.core().nicknames(),
+        )
+        .await)
     }
 }
 
@@ -164,15 +166,15 @@ pub struct PushEventParams {
     pub event_id: OwnedEventId,
 }
 
-impl Handler for PushEventParams {
+impl SessionHandler for PushEventParams {
     type Ok = PushFetchView;
 
-    async fn run(self, core: &Arc<Core>) -> Result<PushFetchView, RpcError> {
-        let client = core.client().await?;
-        let sync_service = core.sync_service().await?;
+    async fn run(self, session: &SignedIn) -> Result<PushFetchView, RpcError> {
+        let client = session.client();
+        let sync_service = session.sync_service();
 
         Ok(Box::pin(notifications::fetch_push_event(
-            &client,
+            client,
             sync_service,
             &self.room_id,
             &self.event_id,
@@ -185,12 +187,12 @@ impl Handler for PushEventParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct KeywordsParams {}
 
-impl Handler for KeywordsParams {
+impl SessionHandler for KeywordsParams {
     type Ok = Vec<KeywordNotificationView>;
 
-    async fn run(self, core: &Arc<Core>) -> Result<Vec<KeywordNotificationView>, RpcError> {
+    async fn run(self, session: &SignedIn) -> Result<Vec<KeywordNotificationView>, RpcError> {
         Ok(push_rules::keywords(
-            &core.push_rules().await?.snapshot().await,
+            &session.push_rules().await?.snapshot(),
         ))
     }
 }
@@ -201,17 +203,17 @@ pub struct AddKeywordParams {
     pub keyword: String,
 }
 
-impl Handler for AddKeywordParams {
+impl SessionHandler for AddKeywordParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
-        let writes = push_rules::plan_add_keyword(&rules.snapshot().await, &self.keyword)
-            .or_report(core, "add_notification_keyword")?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
+        let writes = push_rules::plan_add_keyword(&rules.snapshot(), &self.keyword)
+            .or_report(session.core(), "add_notification_keyword")?;
         rules
             .apply(writes)
             .await
-            .or_report(core, "add_notification_keyword")?;
+            .or_report(session.core(), "add_notification_keyword")?;
 
         Ok(())
     }
@@ -223,18 +225,18 @@ pub struct RemoveKeywordParams {
     pub keyword: String,
 }
 
-impl Handler for RemoveKeywordParams {
+impl SessionHandler for RemoveKeywordParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
         rules
             .apply(push_rules::plan_remove_keyword(
-                &rules.snapshot().await,
+                &rules.snapshot(),
                 &self.keyword,
             ))
             .await
-            .or_report(core, "remove_notification_keyword")?;
+            .or_report(session.core(), "remove_notification_keyword")?;
 
         Ok(())
     }
@@ -247,19 +249,19 @@ pub struct SetKeywordModeParams {
     pub mode: MentionNotificationModeView,
 }
 
-impl Handler for SetKeywordModeParams {
+impl SessionHandler for SetKeywordModeParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
         rules
             .apply(push_rules::plan_keyword_mode(
-                &rules.snapshot().await,
+                &rules.snapshot(),
                 &self.keyword,
                 self.mode,
             ))
             .await
-            .or_report(core, "set_notification_keyword_mode")?;
+            .or_report(session.core(), "set_notification_keyword_mode")?;
 
         Ok(())
     }
@@ -275,16 +277,15 @@ pub struct SetRoomNotificationModeParams {
     pub mode: Option<NotificationModeView>,
 }
 
-impl Handler for SetRoomNotificationModeParams {
+impl SessionHandler for SetRoomNotificationModeParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        SetRoomsNotificationModeParams {
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rooms = SetRoomsNotificationModeParams {
             room_ids: vec![self.room_id],
             mode: self.mode,
-        }
-        .run(core)
-        .await
+        };
+        SessionHandler::run(rooms, session).await
     }
 }
 
@@ -297,21 +298,23 @@ pub struct SetRoomsNotificationModeParams {
     pub mode: Option<NotificationModeView>,
 }
 
-impl Handler for SetRoomsNotificationModeParams {
+impl SessionHandler for SetRoomsNotificationModeParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
         let mut writes = Vec::new();
         for room_id in &self.room_ids {
-            let room = core.room(room_id).await?;
-            let direct = notifications::uses_direct_push_rules(&room);
-            writes.extend(push_rules::plan_room_mode(room_id, direct, self.mode));
+            session.room(room_id)?;
+            writes.extend(push_rules::plan_room_mode(room_id, self.mode));
+        }
+        if self.mode == Some(NotificationModeView::All) {
+            writes.extend(push_rules::plan_suppressions(&rules.snapshot()));
         }
         rules
             .apply(writes)
             .await
-            .or_report(core, "set_rooms_notification_mode")?;
+            .or_report(session.core(), "set_rooms_notification_mode")?;
 
         Ok(())
     }
@@ -324,24 +327,18 @@ pub struct SetDefaultModeParams {
     pub mode: NotificationModeView,
 }
 
-impl Handler for SetDefaultModeParams {
+impl SessionHandler for SetDefaultModeParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
-        if self.direct {
-            return rules
-                .set_direct_default(self.mode)
-                .await
-                .or_report(core, "set_default_notification_mode");
-        }
-        let before = rules.snapshot().await;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
+        let before = rules.snapshot();
         let writes = push_rules::plan_default_mode(&before, self.direct, self.mode)
-            .or_report(core, "set_default_notification_mode")?;
+            .or_report(session.core(), "set_default_notification_mode")?;
         rules
             .apply(writes)
             .await
-            .or_report(core, "set_default_notification_mode")?;
+            .or_report(session.core(), "set_default_notification_mode")?;
 
         Ok(())
     }
@@ -354,17 +351,17 @@ pub struct SetMentionNotificationsParams {
     pub mode: MentionNotificationModeView,
 }
 
-impl Handler for SetMentionNotificationsParams {
+impl SessionHandler for SetMentionNotificationsParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rules = core.push_rules().await?;
-        let writes = push_rules::plan_mention(&rules.snapshot().await, self.rule, self.mode)
-            .or_report(core, "set_mention_notifications")?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rules = session.push_rules().await?;
+        let writes = push_rules::plan_mention(&rules.snapshot(), self.rule, self.mode)
+            .or_report(session.core(), "set_mention_notifications")?;
         rules
             .apply(writes)
             .await
-            .or_report(core, "set_mention_notifications")?;
+            .or_report(session.core(), "set_mention_notifications")?;
 
         Ok(())
     }
@@ -377,20 +374,20 @@ pub struct SetEventNotificationParams {
     pub enabled: bool,
 }
 
-impl Handler for SetEventNotificationParams {
+impl SessionHandler for SetEventNotificationParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let client = core.client().await?;
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let client = session.client();
         let user_id = client.user_id().ok_or(RpcCode::NotLoggedIn)?;
-        let rules = core.push_rules().await?;
+        let rules = session.push_rules().await?;
         let writes =
-            push_rules::plan_event(&rules.snapshot().await, self.event, self.enabled, user_id)
-                .or_report(core, "set_event_notification")?;
+            push_rules::plan_event(&rules.snapshot(), self.event, self.enabled, user_id)
+                .or_report(session.core(), "set_event_notification")?;
         rules
             .apply(writes)
             .await
-            .or_report(core, "set_event_notification")?;
+            .or_report(session.core(), "set_event_notification")?;
 
         Ok(())
     }
@@ -402,15 +399,15 @@ pub struct SetMasterMuteParams {
     pub muted: bool,
 }
 
-impl Handler for SetMasterMuteParams {
+impl SessionHandler for SetMasterMuteParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        core.push_rules()
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        session.push_rules()
             .await?
             .apply(push_rules::plan_master(self.muted))
             .await
-            .or_report(core, "set_master_mute")?;
+            .or_report(session.core(), "set_master_mute")?;
 
         Ok(())
     }
@@ -439,11 +436,11 @@ pub struct InboxOk {
     pub has_more: bool,
 }
 
-impl Handler for InboxParams {
+impl SessionHandler for InboxParams {
     type Ok = InboxOk;
 
-    async fn run(self, core: &Arc<Core>) -> Result<InboxOk, RpcError> {
-        let (items, has_more) = core
+    async fn run(self, session: &SignedIn) -> Result<InboxOk, RpcError> {
+        let (items, has_more) = session
             .inbox_notifications(
                 self.filter,
                 self.include_read,
@@ -455,7 +452,7 @@ impl Handler for InboxParams {
                 },
             )
             .await?;
-        let nicknames = core.nicknames();
+        let nicknames = session.core().nicknames();
         let items = items
             .into_iter()
             .map(|mut item| {
@@ -483,11 +480,12 @@ pub struct BackfillInboxOk {
     pub has_more: bool,
 }
 
-impl Handler for BackfillInboxParams {
+impl SessionHandler for BackfillInboxParams {
     type Ok = BackfillInboxOk;
+    const ENDS_WITH_SESSION: bool = true;
 
-    async fn run(self, core: &Arc<Core>) -> Result<BackfillInboxOk, RpcError> {
-        let (recorded, has_more) = core
+    async fn run(self, session: &SignedIn) -> Result<BackfillInboxOk, RpcError> {
+        let (recorded, has_more) = session
             .backfill_inbox(self.include_read, self.room_id.as_deref())
             .await?;
         Ok(BackfillInboxOk { recorded, has_more })
@@ -513,16 +511,16 @@ impl Handler for SetOptionsParams {
     type Ok = ();
 
     fn run(self, core: &Arc<Core>) -> impl Future<Output = Result<(), RpcError>> {
-        core.notifications_enabled
+        core.settings.notifications_enabled
             .store(self.enabled, Ordering::Relaxed);
-        core.notification_content
+        core.settings.notification_content
             .store(self.content, Ordering::Relaxed);
-        core.notification_encrypted_content
+        core.settings.notification_encrypted_content
             .store(self.encrypted_content, Ordering::Relaxed);
-        core.notification_sounds
+        core.settings.notification_sounds
             .store(self.sounds, Ordering::Relaxed);
-        core.notify_once.store(self.notify_once, Ordering::Relaxed);
-        core.in_app_banners
+        core.settings.notify_once.store(self.notify_once, Ordering::Relaxed);
+        core.settings.in_app_banners
             .store(self.in_app_banners, Ordering::Relaxed);
 
         std::future::ready(Ok(()))
@@ -533,14 +531,14 @@ impl Handler for SetOptionsParams {
 #[cfg_attr(feature = "typegen", derive(specta::Type), specta(inline))]
 pub struct PushRulesParams {}
 
-impl Handler for PushRulesParams {
+impl SessionHandler for PushRulesParams {
     type Ok = Json;
 
-    async fn run(self, core: &Arc<Core>) -> Result<Json, RpcError> {
-        let rules = core.push_rules().await?.snapshot().await;
+    async fn run(self, session: &SignedIn) -> Result<Json, RpcError> {
+        let rules = session.push_rules().await?.snapshot();
         serde_json::to_value(rules)
             .map(Json)
-            .or_failed(core, "push_rules")
+            .or_failed(session.core(), "push_rules")
     }
 }
 
@@ -553,11 +551,11 @@ pub struct SetPushRuleEnabledParams {
     pub enabled: bool,
 }
 
-impl Handler for SetPushRuleEnabledParams {
+impl SessionHandler for SetPushRuleEnabledParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        core.push_rules()
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        session.push_rules()
             .await?
             .apply(vec![push_rules::RuleWrite::Enabled {
                 kind: self.kind,
@@ -565,7 +563,7 @@ impl Handler for SetPushRuleEnabledParams {
                 enabled: self.enabled,
             }])
             .await
-            .or_report(core, "set_push_rule_enabled")
+            .or_report(session.core(), "set_push_rule_enabled")
     }
 }
 
@@ -579,11 +577,11 @@ pub struct SetPushRuleActionsParams {
     pub actions: Vec<Action>,
 }
 
-impl Handler for SetPushRuleActionsParams {
+impl SessionHandler for SetPushRuleActionsParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        core.push_rules()
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        session.push_rules()
             .await?
             .apply(vec![push_rules::RuleWrite::Actions {
                 kind: self.kind,
@@ -591,7 +589,7 @@ impl Handler for SetPushRuleActionsParams {
                 actions: self.actions,
             }])
             .await
-            .or_report(core, "set_push_rule_actions")
+            .or_report(session.core(), "set_push_rule_actions")
     }
 }
 
@@ -604,16 +602,16 @@ pub struct AddPushRuleParams {
     pub rule: serde_json::Value,
 }
 
-impl Handler for AddPushRuleParams {
+impl SessionHandler for AddPushRuleParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        let rule = push_rules::new_rule(&self.kind, self.rule).or_failed(core, "add_push_rule")?;
-        core.push_rules()
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        let rule = push_rules::new_rule(&self.kind, self.rule).or_failed(session.core(), "add_push_rule")?;
+        session.push_rules()
             .await?
             .apply(vec![push_rules::RuleWrite::Put(rule)])
             .await
-            .or_report(core, "add_push_rule")
+            .or_report(session.core(), "add_push_rule")
     }
 }
 
@@ -625,17 +623,17 @@ pub struct DeletePushRuleParams {
     pub rule_id: String,
 }
 
-impl Handler for DeletePushRuleParams {
+impl SessionHandler for DeletePushRuleParams {
     type Ok = ();
 
-    async fn run(self, core: &Arc<Core>) -> Result<(), RpcError> {
-        core.push_rules()
+    async fn run(self, session: &SignedIn) -> Result<(), RpcError> {
+        session.push_rules()
             .await?
             .apply(vec![push_rules::RuleWrite::Delete {
                 kind: self.kind,
                 rule_id: self.rule_id,
             }])
             .await
-            .or_report(core, "delete_push_rule")
+            .or_report(session.core(), "delete_push_rule")
     }
 }

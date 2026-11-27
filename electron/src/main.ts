@@ -40,14 +40,20 @@ import type {
 import { deepLinksIn, deepLinkSchemes } from './deep-links';
 import { AuthLoopback } from './auth-loopback';
 import { CallShortcuts, validBindings } from './call-shortcuts';
-import { AuthWindows } from './auth-window';
 import { autostartAvailable, setLaunchAtLogin } from './autostart';
 import { installMethod } from './install-method';
 import { registerContextMenu } from './context-menu';
 import { claimSchemes } from './linux-schemes';
-import { historyDirection, openAppLink, openExternal, originOf } from './navigation';
+import {
+  historyDirection,
+  openAppLink,
+  openExternal,
+  originOf,
+  windowShortcut,
+} from './navigation';
 import { enforcePermissions } from './permissions';
 import { flushWritesBeforeQuit, writeJson } from './persistence';
+import { spellCheckerLanguages } from './spellcheck';
 import { writeDownload } from './downloads';
 import { shareFile } from './share';
 import { readThemeFile } from './theme-files';
@@ -58,7 +64,9 @@ import { initSentry, setTelemetryConsent } from './sentry';
 import { readSettings, sanitize } from './settings';
 import { captureCorePanic, ignoreBrokenPipes } from './stdio';
 import { importTauriConfig } from './tauri-import';
-import { DesktopTray, hideToTray } from './tray';
+import { relaunchOptions } from './relaunch';
+import { closeAction, DesktopTray, hideToTray } from './tray';
+import { waitForTrayHost } from './tray-host';
 import { registerUpdater, setUpdateChannel, supportsAutoUpdate } from './updater';
 import {
   MIN_HEIGHT,
@@ -95,16 +103,16 @@ const bundleVersionFile = join(distDir, '_app', 'version.json');
 const startedBundle = readBundleVersion();
 // Not process.resourcesPath: Nix runs app.asar with the shared nixpkgs Electron.
 const resourcesDir = dirname(app.getAppPath());
-const isLinux = process.platform === 'linux';
+const isFreedesktop = process.platform === 'linux' || process.platform === 'freebsd';
 const isWayland =
-  isLinux && (process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY);
+  isFreedesktop && (process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY);
 
 function xdgDataHome(): string {
   const xdg = process.env.XDG_DATA_HOME;
   return xdg && isAbsolute(xdg) ? xdg : join(homedir(), '.local', 'share');
 }
 
-const dataDir = join(isLinux ? xdgDataHome() : app.getPath('appData'), IDENTIFIER);
+const dataDir = join(isFreedesktop ? xdgDataHome() : app.getPath('appData'), IDENTIFIER);
 app.setPath('userData', join(app.getPath('appData'), `${IDENTIFIER}.electron`));
 if (!process.mas) {
   importTauriConfig(
@@ -145,20 +153,20 @@ function setFeatures(enable: string[], disable: string[]): void {
 
 if (!settings.hardwareAcceleration) app.disableHardwareAcceleration();
 // In Flatpak a denied camera portal request leaves enumerateDevices() pending forever.
-const enabledFeatures = isLinux && !process.env.FLATPAK_ID ? ['WebRtcPipeWireCamera'] : [];
+const enabledFeatures = isFreedesktop && !process.env.FLATPAK_ID ? ['WebRtcPipeWireCamera'] : [];
 if (settings.hardwareAcceleration && settings.hardwareVideoEncode) {
   enabledFeatures.push('AcceleratedVideoEncoder');
 }
 if (settings.hardwareAcceleration && settings.hardwareVideoDecode) {
   enabledFeatures.push('AcceleratedVideoDecoder');
-  if (isLinux) {
+  if (isFreedesktop) {
     enabledFeatures.push('AcceleratedVideoDecodeLinuxGL', 'AcceleratedVideoDecodeLinuxZeroCopyGL');
   }
 }
 setFeatures(enabledFeatures, [
   'HardwareMediaKeyHandling',
   'MediaSessionService',
-  ...(isLinux ? ['WaylandWpColorManagerV1'] : []),
+  ...(isFreedesktop ? ['WaylandWpColorManagerV1'] : []),
 ]);
 if (!settings.smoothScrolling) app.commandLine.appendSwitch('disable-smooth-scrolling');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -229,7 +237,7 @@ async function serveApp(request: Request): Promise<Response> {
   const found = entry !== undefined && (await stat(file).catch(() => undefined))?.isFile();
   const target = found ? file : join(distDir, '404.html');
   if (target.endsWith('.html') && bundleReplaced()) {
-    app.relaunch();
+    app.relaunch(relaunchOptions(process.argv, process.env.APPIMAGE));
     app.quit();
     return new Response(null, { status: 503 });
   }
@@ -293,6 +301,11 @@ function trayIconPath(): string {
 }
 
 const desktopTray = new DesktopTray(trayIconPath(), () => mainWindow);
+let trayHostReady = false;
+
+function updateTray(): boolean {
+  return trayHostReady && desktopTray.update(desktopWindowSettings.showSystemTrayIcon);
+}
 
 function sanitizeDesktopWindowSettings(value: unknown): DesktopWindowSettings {
   const stored = (typeof value === 'object' && value !== null ? value : {}) as Record<
@@ -336,31 +349,9 @@ function deliverDeepLinks(urls: string[]): void {
   else pendingDeepLinks.push(...urls);
 }
 
-const authWindows = new AuthWindows();
-
 const authLoopback = new AuthLoopback((url) => {
   deliverDeepLinks([url]);
   showMainWindow();
-});
-
-ipcMain.handle('sable-auth-open', async (event, id: string, url: string) => {
-  if (!isAppFrame(event.senderFrame) || event.sender !== mainWindow?.webContents) {
-    throw new Error('Invalid authentication origin');
-  }
-  if (typeof id !== 'string' || typeof url !== 'string') {
-    throw new Error('Invalid authentication request');
-  }
-  await authWindows.open(mainWindow, id, url);
-});
-
-ipcMain.handle('sable-auth-close', (event, id: string) => {
-  if (
-    isAppFrame(event.senderFrame) &&
-    event.sender === mainWindow?.webContents &&
-    typeof id === 'string'
-  ) {
-    authWindows.close(id);
-  }
 });
 
 ipcMain.handle('sable-auth-external', async (event, url: string) => {
@@ -435,7 +426,7 @@ function startCore(): UtilityProcess {
       app.exit(1);
       return;
     }
-    app.relaunch({ args: [...process.argv.slice(1), '--password-store=basic'] });
+    app.relaunch(relaunchOptions(process.argv, process.env.APPIMAGE, ['--password-store=basic']));
     app.exit(0);
   });
 
@@ -556,7 +547,7 @@ ipcMain.handle('sable-apply-window-settings', (event, value: unknown) => {
   if (!isAppFrame(event.senderFrame)) return null;
   desktopWindowSettings = sanitizeDesktopWindowSettings(value);
   setCustomTitleBar(isCustomTitleBarRequested(value));
-  return { trayAvailable: desktopTray.update(desktopWindowSettings.showSystemTrayIcon) };
+  return { trayAvailable: updateTray() };
 });
 
 function windowOf(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | null {
@@ -652,10 +643,15 @@ function createWindow(): BrowserWindow {
   window.on('close', (event) => {
     rememberWindowState(window);
     persistWindowState();
-    if (!quitting && desktopWindowSettings.closeToTray && desktopTray.available) {
-      event.preventDefault();
-      hideToTray(window);
-    }
+    const action = closeAction(
+      process.platform,
+      quitting,
+      desktopWindowSettings.closeToTray && desktopTray.available
+    );
+    if (action === 'close') return;
+    event.preventDefault();
+    if (action === 'hide-app') app.hide();
+    else hideToTray(window);
   });
   const reportMaximized = () => {
     window.webContents.send('sable-window-maximized', window.isMaximized());
@@ -685,6 +681,13 @@ function createWindow(): BrowserWindow {
       const history = window.webContents.navigationHistory;
       if (direction === 'back' && history.canGoBack()) history.goBack();
       if (direction === 'forward' && history.canGoForward()) history.goForward();
+      return;
+    }
+    const shortcut = windowShortcut(input, process.platform);
+    if (shortcut) {
+      event.preventDefault();
+      if (shortcut === 'quit') app.quit();
+      else window.close();
       return;
     }
     const f12 = input.key === 'F12' && !input.control && !input.shift && !input.alt && !input.meta;
@@ -911,7 +914,7 @@ function registerScreenShare(): void {
 }
 
 function registerDeepLinks(): void {
-  if (isLinux) {
+  if (isFreedesktop) {
     // Flatpak, deb, rpm and Nix install a desktop entry that declares the schemes.
     const method = installMethod();
     if (method !== 'appimage' && method !== 'unpacked') return;
@@ -972,7 +975,10 @@ if (!app.requestSingleInstanceLock()) {
       callShortcuts.releaseAll();
     });
     registerDeepLinks();
-    desktopTray.update(desktopWindowSettings.showSystemTrayIcon);
+    void waitForTrayHost().then(() => {
+      trayHostReady = true;
+      if (!quitting) updateTray();
+    });
     core = startCore();
     protocol.handle(SCHEME, serveApp);
     enforcePermissions(
@@ -983,13 +989,10 @@ if (!app.requestSingleInstanceLock()) {
     );
     registerScreenShare();
     if (process.platform !== 'darwin') {
-      const available = new Set(session.defaultSession.availableSpellCheckerLanguages);
-      const languages = app
-        .getPreferredSystemLanguages()
-        .flatMap((language) => [language, language.split('-')[0]])
-        .filter(
-          (language, index, all) => available.has(language) && all.indexOf(language) === index
-        );
+      const languages = spellCheckerLanguages(
+        app.getPreferredSystemLanguages(),
+        session.defaultSession.availableSpellCheckerLanguages
+      );
       if (languages.length > 0) session.defaultSession.setSpellCheckerLanguages(languages);
     }
     registerUpdater(isAppFrame);

@@ -26,7 +26,7 @@ vi.mock('#lib/settings/preferences.svelte.js', () => ({
   applyDeploymentLocks: vi.fn(),
   applyAccountPreferences: mocks.preferences,
 }));
-vi.mock('./theme.js', () => ({ loadDeploymentTheme: vi.fn() }));
+vi.mock('./theme.svelte.js', () => ({ loadDeploymentTheme: vi.fn() }));
 import {
   activateAccountConfiguration,
   deployment,
@@ -63,6 +63,16 @@ test('switching accounts ignores stale responses', async () => {
   activateAccountConfiguration(null);
   expect(deployment().branding.appName).toBe('Local');
   expect(mocks.preferences).toHaveBeenLastCalledWith({}, {});
+});
+
+test('rerunning the root load keeps the account configuration', async () => {
+  await loadDeployment();
+  mocks.cache.mockReturnValueOnce({ branding: { appName: 'Account A' } });
+  mocks.discover.mockResolvedValueOnce(undefined);
+  activateAccountConfiguration({ account_id: 'a', user_id: '@alice:a.example' });
+  await loadDeployment();
+  expect(deployment().branding.appName).toBe('Account A');
+  activateAccountConfiguration(null);
 });
 
 test('login preview leaves the active account unchanged', async () => {

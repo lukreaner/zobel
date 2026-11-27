@@ -14,10 +14,8 @@
     ImageSourcePackView,
     PackImageView,
     PersonaView,
+    UrlPreviewView,
   } from '#src/generated/protocol';
-  import { mergeProps } from 'bits-ui';
-  import MicrophoneIcon from 'phosphor-svelte/lib/MicrophoneIcon';
-  import TextAaIcon from 'phosphor-svelte/lib/TextAaIcon';
   import type { Node as ProseMirrorNode } from 'prosemirror-model';
   import { onDestroy, tick, untrack } from 'svelte';
 
@@ -29,23 +27,25 @@
   import type { ReplyDirection } from '#lib/features/room/timeline/timeline-format.js';
   import DeleteMessageDialog from '#lib/features/room/messages/DeleteMessageDialog.svelte';
   import { previewSources } from '#lib/features/room/media/link-preview-cache.js';
-  import { previewableLinks } from '#lib/features/room/media/link-preview.js';
+  import { outgoingPreviewableLinks } from '#lib/features/room/media/link-preview.js';
   import { i18n } from '#lib/i18n.js';
+  import { serverNameOf } from '#lib/matrix-id.js';
   import { isPackChange } from '#lib/emoji/load-packs.js';
-  import { capturesFromCamera, pickFiles } from '#lib/platform/files.js';
+  import { capturesFromCamera, pickFiles, withResolvedMime } from '#lib/platform/files.js';
   import { isAndroid } from '#lib/platform/os.js';
   import { usePersonaStore } from '#lib/personas/personas.svelte.js';
   import { outgoingPersona } from '#lib/personas/outgoing-persona.js';
   import { personaSpaces } from './persona-spaces.js';
   import { useRoomList } from '#lib/rooms/room-list.svelte.js';
+  import { matrixLinkHost } from '#lib/rooms/matrix-link.js';
   import { enterInsertsNewline } from '#lib/settings/enter-key.svelte.js';
   import { preferences, setPreference } from '#lib/settings/preferences.svelte.js';
+  import { SETTINGS_DEVICES_SECTION } from '#lib/settings/registry.js';
+  import { showSettingsOver } from '#lib/features/settings/settings-navigation.js';
   import { type ImageMetadata } from '#lib/settings/definitions.js';
   import { AppLayout } from '#lib/ui/app-layout.svelte.js';
   import { formatByteSize } from '#lib/ui/byte-size.js';
   import { cachedMediaUrl, holdMediaUrl, loadMediaUrl } from '#lib/ui/media-url.js';
-  import IconButton from '#lib/ui/primitives/IconButton.svelte';
-  import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
   import { toasts } from '#lib/ui/toasts.svelte.js';
 
   import BotCommandForm from './BotCommandForm.svelte';
@@ -65,7 +65,10 @@
   import ComposerSendButton from './ComposerSendButton.svelte';
   import PersonaPicker from './PersonaPicker.svelte';
   import PollComposer from './PollComposer.svelte';
+  import ComposerFormatButton from './ComposerFormatButton.svelte';
   import ComposerFormatting from './ComposerFormatting.svelte';
+  import ComposerReadOnly from './ComposerReadOnly.svelte';
+  import ComposerVoiceButton from './ComposerVoiceButton.svelte';
   import ComposerLinkDialog from './ComposerLinkDialog.svelte';
   import ComposerSpoilerDialog from './ComposerSpoilerDialog.svelte';
   import LocationComposer from './LocationComposer.svelte';
@@ -125,10 +128,11 @@
     buildInvocation,
     draftsFromText,
     matchBotCommand,
+    prefillDrafts,
     type BotCommand,
     type BotCommandInvocation,
   } from './bot-commands';
-  import { parseSlash } from './slash-commands';
+  import { parseSlash, SlashError } from './slash-commands';
   import { editStep, replyStep } from './step-shortcuts';
   import { suggestionNode } from './suggestion-node';
   import { rememberSuggestion } from './suggestion-usage';
@@ -195,6 +199,7 @@
     encrypted?: boolean | null;
     dismissedPreviews?: readonly string[];
     onDismissPreview?: (url: string) => void;
+    loadLinkPreview?: (url: string) => Promise<UrlPreviewView | null>;
     /** What the next send relates to: a message being replied to, or edited. */
     context?: ComposerContext | null;
     restoredContext?: ComposerContext | null;
@@ -229,6 +234,7 @@
     encrypted = null,
     dismissedPreviews = [],
     onDismissPreview,
+    loadLinkPreview,
     context = null,
     restoredContext = null,
     onCancelContext,
@@ -299,6 +305,7 @@
   let inFlight = $state(0);
   let error = $state<string | null>(null);
   let retry = $state<{ text: string; run: () => void } | null>(null);
+  let securityLink = $state<string | null>(null);
   let pollOpen = $state(false);
   let locationOpen = $state(false);
   let scheduleOpen = $state(false);
@@ -314,7 +321,7 @@
   let multiline = $state(false);
   let pointerHidden = $state(false);
   const shortLayout = $derived(
-    compactHeight || (composerShort && (!multiline || preferences.alwaysInlineEditor))
+    compactHeight || (!expanded && composerShort && (!multiline || preferences.alwaysInlineEditor))
   );
   let layoutFrame: number | undefined;
   let empty = $state(true);
@@ -680,6 +687,7 @@
   function openBotCommand(command: BotCommand, args: string, prefix: string): void {
     const drafts = $state(draftsFromText(command, args));
     storeBotCommand({ command, drafts, prefix });
+    void prefillDrafts(command, drafts, serverNameOf(core.session?.user_id ?? ''));
     error = null;
     void sources.loadMembers();
   }
@@ -722,7 +730,7 @@
     if (!doc) return null;
     const text = commandTextOf(doc).trim();
     if (admin && text.startsWith(adminPrefix)) return text;
-    return parseSlash(text).kind === 'unknown' ? text : null;
+    return parseSlash(text, null, matrixLinkHost()).kind === 'unknown' ? text : null;
   }
 
   async function typedBotCommand(text: string): Promise<boolean> {
@@ -740,6 +748,7 @@
     const accountId = core.session?.account_id ?? '';
     const restore = () => restoreUnsent(targetKey, accountId, doc, []);
     editor.clear();
+    expanded = false;
     if (matched.command.parameters.length === 0 && matched.args !== '') {
       const body = `${typed.prefix}${matched.command.command}${matched.raw_args}`;
       if (
@@ -753,7 +762,7 @@
       return true;
     }
     const drafts = draftsFromText(matched.command, matched.args);
-    const result = buildInvocation(matched.command, drafts, typed.prefix);
+    const result = buildInvocation(matched.command, drafts, typed.prefix, matrixLinkHost());
     if (result.kind === 'built') {
       if (!(await sendBotCommand(matched.command, result.body, result.invocation))) {
         restore();
@@ -790,7 +799,7 @@
 
   function cancelContext(): void {
     onCancelContext?.();
-    if (context?.kind === 'edit' || editingScheduled || !desktop) blurEditor();
+    if (context?.kind === 'edit' || editingScheduled) blurEditor();
   }
 
   let shownLinks = $derived.by(() => {
@@ -804,7 +813,7 @@
     draftLinksTimeout = setTimeout(() => {
       const doc = editor.doc();
       const message = doc ? (richSend ? serializeComposer(doc) : serializePlain(doc)) : null;
-      draftLinks = message?.formatted ? previewableLinks(message.formatted, message.body) : [];
+      draftLinks = message ? outgoingPreviewableLinks(message.formatted, message.body) : [];
     }, 300);
   }
 
@@ -821,9 +830,13 @@
     }
   }
 
-  function failureText(cause: unknown): string {
-    const { key, values } = sendFailure(cause);
-    return i18n.t(key, values);
+  function failureText(cause: unknown, failure = sendFailure(cause)): string {
+    const text = i18n.t(failure.key, failure.values);
+    securityLink =
+      cause instanceof SlashError && cause.key === 'composer.slashShareHistory.no_cross_signing'
+        ? text
+        : null;
+    return text;
   }
 
   /** A send outlives a room switch, so its failure is put back in the room it was meant for. */
@@ -854,7 +867,7 @@
 
   function failRetryably(cause: unknown, run: () => void): void {
     const failure = sendFailure(cause);
-    error = i18n.t(failure.key, failure.values);
+    error = failureText(cause, failure);
     retry = failure.retryable ? { text: error, run } : null;
   }
 
@@ -874,14 +887,15 @@
     const typedLine = commandLine();
     if (typedLine !== null && (await typedBotCommand(typedLine))) return;
 
-    const doc = editor.doc();
+    const typed = editor.doc();
     const untouched =
       context?.kind === 'edit' &&
       prefilledDoc !== undefined &&
-      doc?.eq(prefilledDoc) === true &&
+      typed?.eq(prefilledDoc) === true &&
       staged.length === 0
         ? { body: context.body, formatted: context.html ?? null }
         : null;
+    const doc = untouched ? typed : editor.linkStandingOffers();
     const rich = richSend;
     const attachmentsCancelEdit = context?.kind === 'edit' && staged.length > 0;
     const captionEdit = editingCaption && !attachmentsCancelEdit;
@@ -894,6 +908,8 @@
     inFlight += 1;
     error = null;
     editor.clear();
+    draftLinks = [];
+    expanded = false;
     sourceMode = editor.leaveSource();
     staged = [];
     typing.stop();
@@ -1152,7 +1168,12 @@
       }
 
       error = null;
-      staged = stageFiles(staged, files, () => nextStagedId++, preferences.imageMetadata);
+      staged = stageFiles(
+        staged,
+        files.map(withResolvedMime),
+        () => nextStagedId++,
+        preferences.imageMetadata
+      );
       if (desktop) editor.focus();
     } catch (cause) {
       if (current()) {
@@ -1201,11 +1222,13 @@
     input.value = '';
   }
 
-  /** The servers cost a round trip, so the mention is inserted without them. */
+  /** The servers cost a round trip. Only joined rooms are offered by id, so ours can stand in. */
   async function attachVia(address: string): Promise<void> {
     if (!address.startsWith('!')) return;
+    const own = serverNameOf(core.session?.user_id ?? '');
+    editor.attachVia(address, [own]);
     try {
-      editor.attachVia(address, await core.rpc.rooms.viaServers({ room_id: address }));
+      editor.attachVia(address, await core.rpc.rooms.viaServers({ room_id: address }), own);
     } catch (error) {
       console.debug('[sable composer] via servers unavailable', error);
     }
@@ -1458,13 +1481,7 @@
   class={['composer-stack', { short: composerShort && !readOnly, 'pointer-hidden': pointerHidden }]}
 >
   {#if readOnly}
-    <div class="composer-shell">
-      <div class="composer">
-        <div class="composer-row">
-          <p class="locked">{i18n.t('composer.readOnly')}</p>
-        </div>
-      </div>
-    </div>
+    <ComposerReadOnly />
   {:else}
     <div class="composer-shell">
       <div class="composer" role="group" aria-label={i18n.t('timeline.messagePlaceholder')}>
@@ -1494,12 +1511,21 @@
           {/key}
         {/if}
         {#if onDismissPreview && context?.kind !== 'edit' && shownLinks.length > 0}
-          <ComposerLinkPreviews urls={shownLinks} onDismiss={onDismissPreview} />
+          <ComposerLinkPreviews urls={shownLinks} onDismiss={onDismissPreview} {loadLinkPreview} />
         {/if}
         {#if error}
           <ComposerError
             message={error}
             onRetry={retry?.text === error ? retry.run : undefined}
+            action={securityLink === error
+              ? {
+                  label: i18n.t('composer.openSecuritySettings'),
+                  run: () => {
+                    error = null;
+                    showSettingsOver(SETTINGS_DEVICES_SECTION);
+                  },
+                }
+              : undefined}
             onDismiss={() => {
               error = null;
             }}
@@ -1643,25 +1669,12 @@
               </div>
             {/if}
             {#snippet formatButton()}
-              <Tooltip label={i18n.t('composer.formatting')}>
-                {#snippet trigger({ props })}
-                  <IconButton
-                    {...mergeProps(props, {
-                      onclick: () => {
-                        setPreference('formattingToolbar', !formattingOpen);
-                      },
-                    })}
-                    variant="ghost"
-                    size="small"
-                    class="composer-format selection-open"
-                    aria-pressed={formattingOpen}
-                    data-state={formattingOpen ? 'open' : 'closed'}
-                    label={i18n.t('composer.formatting')}
-                  >
-                    <TextAaIcon />
-                  </IconButton>
-                {/snippet}
-              </Tooltip>
+              <ComposerFormatButton
+                open={formattingOpen}
+                onToggle={() => {
+                  setPreference('formattingToolbar', !formattingOpen);
+                }}
+              />
             {/snippet}
             <div class="composer-after" bind:this={afterEl}>
               <ComposerBoard
@@ -1682,21 +1695,7 @@
                 }}
               />
               {#if showVoice}
-                <Tooltip label={i18n.t('composer.voiceRecord')}>
-                  {#snippet trigger({ props })}
-                    <IconButton
-                      {...mergeProps(props, {
-                        onclick: startRecording,
-                      })}
-                      variant="ghost"
-                      size="small"
-                      class="composer-voice"
-                      label={i18n.t('composer.voiceRecord')}
-                    >
-                      <MicrophoneIcon />
-                    </IconButton>
-                  {/snippet}
-                </Tooltip>
+                <ComposerVoiceButton onStart={startRecording} />
               {/if}
               <ComposerSendButton
                 {context}
@@ -1825,18 +1824,6 @@
     position: absolute;
     visibility: hidden;
     white-space: pre-wrap;
-  }
-
-  .locked {
-    align-items: center;
-    color: var(--surface-var-on-container);
-    display: flex;
-    font-size: max(var(--font-size-editor), var(--font-size-input-min));
-    grid-column: 1 / -1;
-    justify-content: center;
-    margin: 0;
-    min-height: var(--target);
-    padding: var(--space-200) var(--space-300);
   }
 
   .composer-file {

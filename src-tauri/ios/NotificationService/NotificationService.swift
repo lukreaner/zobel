@@ -104,9 +104,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                    let user = rendered["user_id"] as? String {
                     self?.clearReadRooms(rooms, user: user)
                 }
+                let badge = rendered["badge"] as? Int
                 if rendered["discard"] as? Bool == true {
                     Self.log.info("discarded by push rules")
-                    self?.suppress()
+                    self?.suppress(badge: badge)
                     return
                 }
                 if let ring = rendered["ring"] as? [String: Any], let room = rendered["room_id"] as? String,
@@ -115,7 +116,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                     return
                 }
                 if let read = rendered["read"] as? [String: Any], let user = rendered["user_id"] as? String {
-                    self?.clearRead(read, user: user)
+                    self?.clearRead(read, user: user, badge: badge ?? 0)
                     return
                 }
                 guard let body = rendered["body"] as? String,
@@ -236,12 +237,13 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         return INImage(imageData: data)
     }
 
-    private func clearRead(_ read: [String: Any], user: String) {
+    private func clearRead(_ read: [String: Any], user: String, badge: Int) {
         guard read["clear"] as? Bool == true else {
-            suppress(badge: 0)
+            suppress(badge: badge)
             return
         }
         let room = read["room_id"] as? String
+        forgetCooldown(user: user, rooms: room.map { [$0] })
         UNUserNotificationCenter.current().getDeliveredNotifications { [weak self] delivered in
             let identifiers = delivered.filter { notification in
                 let parts = notification.request.content.threadIdentifier
@@ -251,12 +253,13 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             if !identifiers.isEmpty {
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
             }
-            self?.suppress(badge: 0)
+            self?.suppress(badge: badge)
         }
     }
 
     private func clearReadRooms(_ rooms: [String], user: String) {
         guard !rooms.isEmpty else { return }
+        forgetCooldown(user: user, rooms: rooms)
         UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
             let roomSet = Set(rooms)
             let identifiers = delivered.filter { notification in
@@ -268,6 +271,13 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
             }
         }
+    }
+
+    private func forgetCooldown(user: String, rooms: [String]?) {
+        lock.lock()
+        let root = policyRoot
+        lock.unlock()
+        if let root { AlertCooldown.forget(root: root, user: user, rooms: rooms) }
     }
 
     private func suppress(badge: Int? = nil) {
@@ -438,7 +448,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             ? Self.conversationThread(updated.userInfo) : updated.threadIdentifier
         let priorCooling = alertedAt.map { now >= $0 && now - $0 < Self.notifyOnceWindow } ?? false
         let cooling: Bool
-        if enabled, !activeElsewhere, duplicates.isEmpty, updated.categoryIdentifier != Self.inviteCategory,
+        if enabled, !important, !activeElsewhere, duplicates.isEmpty,
+           updated.categoryIdentifier != Self.inviteCategory,
            let root, let thread {
             cooling = AlertCooldown.record(
                 root: root, thread: thread, now: now, window: Self.notifyOnceWindow

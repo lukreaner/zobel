@@ -7,7 +7,9 @@ vi.mock('@sentry/sveltekit', async () => {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   const sdk = (await import(
-    require.resolve('@sentry/browser', { paths: [require.resolve('@sentry/sveltekit')] })
+    require.resolve('@sentry/browser', {
+      paths: [require.resolve('@sentry/svelte', { paths: [require.resolve('@sentry/sveltekit')] })],
+    })
   )) as typeof import('@sentry/sveltekit');
   return {
     ...sdk,
@@ -57,5 +59,14 @@ test('drops events after consent is revoked', async () => {
   const { reportWorkerError } = await import('./telemetry');
   await reportWorkerError('push', new Error('failure'));
   expect(state.consent).toHaveBeenCalledTimes(2);
+  expect(state.envelopes).toEqual([]);
+});
+
+test('does not report a worker that a newer deploy replaced', async () => {
+  vi.stubEnv('VITE_SENTRY_DSN', 'https://public@example.invalid/1');
+  state.consent.mockResolvedValue(true);
+  const { StaleWorkerError, watchWorkerOperation } = await import('./telemetry');
+  const error = new StaleWorkerError();
+  await expect(watchWorkerOperation('push', Promise.reject(error))).rejects.toBe(error);
   expect(state.envelopes).toEqual([]);
 });

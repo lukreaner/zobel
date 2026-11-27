@@ -8,7 +8,7 @@
   import { DeviceVerification } from '#lib/core/device-verification.svelte.js';
   import { IdentityReset } from '#lib/core/identity-reset.svelte.js';
   import { i18n } from '#lib/i18n.js';
-  import { openExternalAuthUrl } from '#lib/platform/external-auth.js';
+  import { openAccountManagementUrl } from '#lib/platform/account-management.js';
   import { afterOverlayPops, holdOverlayBack } from '#lib/platform/overlay-back.svelte.js';
   import Button from '#lib/ui/primitives/Button.svelte';
   import FormField from '#lib/ui/primitives/FormField.svelte';
@@ -23,15 +23,21 @@
     onComplete: () => void;
     onSkip: () => void;
     onReset: (recoveryKey: string) => void;
+    view?: 'choices' | 'recovery' | 'reset' | 'skip';
+    prompted?: boolean;
   }
 
-  let { onComplete, onSkip, onReset }: Props = $props();
+  let {
+    onComplete,
+    onSkip,
+    onReset,
+    view = $bindable('choices'),
+    prompted = $bindable(false),
+  }: Props = $props();
   const core = useCoreClient();
   const verification = new DeviceVerification(core);
   let reset = $state(new IdentityReset(core));
-  let view = $state<'choices' | 'recovery' | 'reset' | 'skip'>('choices');
   let understood = $state(false);
-  let prompted = $state(false);
   let completing = false;
   let card = $state<HTMLElement>();
   let shownView: typeof view = 'choices';
@@ -103,7 +109,7 @@
 
   function approve(): void {
     if (!reset.approvalUrl) return;
-    void openExternalAuthUrl(reset.approvalUrl);
+    void openAccountManagementUrl(reset.approvalUrl);
     void runReset(() => reset.awaitApproval());
   }
 </script>
@@ -286,11 +292,8 @@
   {/if}
 </div>
 
-{#if prompted && !verified && view === 'choices'}
-  {#if !resetOnly}
-    <AuthSecondaryAction label={i18n.t('setup.cantConfirm')} onclick={() => (view = 'reset')} />
-  {/if}
-  <AuthSecondaryAction label={i18n.t('auth.skipForNow')} onclick={() => (view = 'skip')} />
+{#if prompted && !verified && view === 'choices' && !resetOnly}
+  <AuthSecondaryAction label={i18n.t('setup.cantConfirm')} onclick={() => (view = 'reset')} />
 {/if}
 
 <style>

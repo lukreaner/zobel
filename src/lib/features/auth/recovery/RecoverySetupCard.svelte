@@ -13,38 +13,41 @@
   import AuthField from '../shared/AuthField.svelte';
   import FormField from '#lib/ui/primitives/FormField.svelte';
   import AuthInfoBox from '../shared/AuthInfoBox.svelte';
-  import AuthSecondaryAction from '../shared/AuthSecondaryAction.svelte';
   import AuthStatusSlot from '../shared/AuthStatusSlot.svelte';
 
   interface Props {
     recoveryKey?: string | null;
     onComplete: () => void;
-    onSkip: () => void;
+    createdKey?: string;
   }
 
-  let { recoveryKey: givenKey = null, onComplete, onSkip }: Props = $props();
+  let { recoveryKey: givenKey = null, onComplete, createdKey = $bindable('') }: Props = $props();
   const core = useCoreClient();
-  let createdKey = $state('');
   let creating = $state(false);
   let confirmingReplaceBackup = $state(false);
+  let confirmingResumeBackup = $state(false);
   let error = $state<string | null>(null);
   let kept = $state<'copied' | 'downloaded' | null>(null);
   let writtenDown = $state(false);
   const recoveryKey = $derived(createdKey || givenKey || '');
   const saved = $derived(writtenDown);
 
-  async function createRecoveryKey(replaceBackup = false): Promise<void> {
+  async function createRecoveryKey(replaceBackup = false, resumeBackup = false): Promise<void> {
     creating = true;
     error = null;
     try {
       createdKey = await core.rpc.encryption.enableRecovery({
         passphrase: null,
         replace_backup: replaceBackup,
+        resume_backup: resumeBackup,
       });
       confirmingReplaceBackup = false;
+      confirmingResumeBackup = false;
     } catch (cause) {
       if (isCoreError(cause, 'backup_exists')) {
         confirmingReplaceBackup = true;
+      } else if (isCoreError(cause, 'backup_paused')) {
+        confirmingResumeBackup = true;
       } else {
         error = t('settings.actionFailed');
       }
@@ -153,9 +156,15 @@
   onConfirm={() => void createRecoveryKey(true)}
 />
 
-{#if !recoveryKey}
-  <AuthSecondaryAction label={i18n.t('auth.skipForNow')} onclick={onSkip} />
-{/if}
+<ConfirmDialog
+  bind:open={confirmingResumeBackup}
+  title={i18n.t('settings.resumeKeyBackupConfirmTitle')}
+  description={i18n.t('settings.resumeKeyBackupConfirmDescription')}
+  confirmLabel={i18n.t('settings.resumeKeyBackup')}
+  confirmVariant="primary"
+  busy={creating}
+  onConfirm={() => void createRecoveryKey(false, true)}
+/>
 
 <style>
   .recovery-setup-card {

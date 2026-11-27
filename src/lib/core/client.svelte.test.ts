@@ -42,6 +42,7 @@ const localNetwork = vi.hoisted(() => ({
   gated: false,
   denied: false,
   requestAndroid: vi.fn(() => Promise.resolve(false)),
+  unasked: false,
 }));
 
 vi.mock('#lib/platform/local-network.js', async (importOriginal) => ({
@@ -49,6 +50,7 @@ vi.mock('#lib/platform/local-network.js', async (importOriginal) => ({
   browserGatesCoreNetwork: () => localNetwork.gated,
   localNetworkDenied: () => Promise.resolve(localNetwork.denied),
   requestAndroidLocalNetwork: localNetwork.requestAndroid,
+  androidLocalNetworkUnasked: () => Promise.resolve(localNetwork.unasked),
 }));
 
 const session: SessionInfo = {
@@ -348,6 +350,54 @@ test('logging out selects another saved account instead of returning to sign-in'
   });
 });
 
+test('logging out skips a saved account whose login cannot be opened', async () => {
+  const broken: SessionInfo = { ...otherSession, account_id: 'account-c', device_id: 'OLD' };
+  const accounts = { accounts: [session, broken, otherSession] };
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': () => accounts.accounts,
+  });
+  const call = fake.call.getMockImplementation();
+  if (!call) throw new Error('missing transport handler');
+  fake.call.mockImplementation((method, params) => {
+    if (method !== 'session.switch_account') return call(method, params);
+    return (params as { account_id: string }).account_id === broken.account_id
+      ? Promise.reject(new CoreError(transportFailure('e16')))
+      : Promise.resolve(otherSession);
+  });
+  const core = createCoreClient(() => fake.transport);
+
+  await core.start();
+  accounts.accounts = [broken, otherSession];
+  await core.logout();
+
+  expect(core.session).toEqual(otherSession);
+  expect(core.status).toBe('ready');
+});
+
+test('logging out ends signed out when no saved account opens', async () => {
+  const accounts = { accounts: [session, otherSession] };
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': () => accounts.accounts,
+  });
+  const call = fake.call.getMockImplementation();
+  if (!call) throw new Error('missing transport handler');
+  fake.call.mockImplementation((method, params) =>
+    method === 'session.switch_account'
+      ? Promise.reject(new CoreError(transportFailure('e16')))
+      : call(method, params)
+  );
+  const core = createCoreClient(() => fake.transport);
+
+  await core.start();
+  accounts.accounts = [otherSession];
+  await core.logout();
+
+  expect(core.session).toBeNull();
+  expect(core.status).toBe('signed-out');
+});
+
 test("logging out forgets that account's recent searches and keeps the others'", async () => {
   const accounts = { accounts: [session, otherSession] };
   const fake = fakeTransport({
@@ -365,6 +415,71 @@ test("logging out forgets that account's recent searches and keeps the others'",
 
   expect(recentSearches(session.user_id)).toEqual([]);
   expect(recentSearches(otherSession.user_id)).toEqual(['rollback plan']);
+});
+
+test('a logout that fails with the session still running changes nothing', async () => {
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': [session, otherSession],
+    'session.logout': () => Promise.reject(new CoreError(transportFailure('e21'))),
+  });
+  const core = createCoreClient(() => fake.transport);
+  await core.start();
+
+  await expect(core.logout()).rejects.toThrow(CoreError);
+
+  expect(core.session).toEqual(session);
+  expect(core.status).toBe('ready');
+  expect(fake.called.map((call) => call.method)).not.toContain('session.switch_account');
+  core.stop();
+});
+
+test('a logout that fails after the session ended signs out and keeps the account data', async () => {
+  const accounts = { accounts: [session, otherSession] };
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': () => accounts.accounts,
+    'session.switch_account': otherSession,
+    'session.logout': () => {
+      accounts.accounts = [{ ...session, needs_reauth: true }, otherSession];
+      return Promise.reject(new CoreError(transportFailure('e22')));
+    },
+  });
+  const core = createCoreClient(() => fake.transport);
+  rememberSearch(session.user_id, 'salary review');
+  await core.start();
+  vi.mocked(removeAccountConfiguration).mockClear();
+
+  await expect(core.logout()).rejects.toThrow(CoreError);
+
+  expect(core.session).toEqual(otherSession);
+  expect(core.status).toBe('ready');
+  expect(core.accounts).toEqual(accounts.accounts);
+  expect(fake.deleteAccountStore).not.toHaveBeenCalled();
+  expect(removeAccountConfiguration).not.toHaveBeenCalled();
+  expect(recentSearches(session.user_id)).toEqual(['salary review']);
+  core.stop();
+});
+
+test('a logout that fails after the session ended with no other account ends signed out', async () => {
+  const accounts = { accounts: [session] };
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': () => accounts.accounts,
+    'session.logout': () => {
+      accounts.accounts = [{ ...session, needs_reauth: true }];
+      return Promise.reject(new CoreError(transportFailure('e23')));
+    },
+  });
+  const core = createCoreClient(() => fake.transport);
+  await core.start();
+
+  await expect(core.logout()).rejects.toThrow(CoreError);
+
+  expect(core.session).toBeNull();
+  expect(core.status).toBe('signed-out');
+  expect(core.accounts).toEqual(accounts.accounts);
+  core.stop();
 });
 
 test('removing an account forgets its recent searches', async () => {
@@ -1089,26 +1204,68 @@ test('a restored session asks for local network access from the page', async () 
 });
 
 test('an offline core with a homeserver the page reaches reports the browser blocking it', async () => {
-  const { core, fake } = await startGated(() => Promise.resolve(new Response('{}')));
+  const { core, fake, fetchMock } = await startGated(() => Promise.resolve(new Response('{}')));
 
+  vi.useFakeTimers();
   fake.emit({ type: 'sync_status', state: 'offline' });
-  await vi.waitFor(() => {
-    expect(core.localNetworkBlocked).toBe('example.org');
-  });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(core.localNetworkBlocked).toBe('example.org');
 
   fake.emit({ type: 'sync_status', state: 'live' });
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(core.localNetworkBlocked).toBe('example.org');
+
+  fake.emit({ type: 'sync_status', state: 'live' });
+  vi.advanceTimersByTime(30_000);
   expect(core.localNetworkBlocked).toBeNull();
+  vi.useRealTimers();
+});
+
+test('a short offline spell with a homeserver the page reaches is not blamed on the browser', async () => {
+  const { core, fake } = await startGated(() => Promise.resolve(new Response('{}')));
+
+  vi.useFakeTimers();
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.advanceTimersByTimeAsync(1000);
+  fake.emit({ type: 'sync_status', state: 'live' });
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(core.localNetworkBlocked).toBeNull();
+
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(core.localNetworkBlocked).toBe('example.org');
+  vi.useRealTimers();
+});
+
+test('a homeserver the page reaches that keeps dropping sync reports the browser blocking it', async () => {
+  const { core, fake } = await startGated(() => Promise.resolve(new Response('{}')));
+
+  vi.useFakeTimers();
+  for (let spell = 0; spell < 2; spell += 1) {
+    fake.emit({ type: 'sync_status', state: 'offline' });
+    await vi.advanceTimersByTimeAsync(100);
+    fake.emit({ type: 'sync_status', state: 'live' });
+  }
+  expect(core.localNetworkBlocked).toBeNull();
+
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.advanceTimersByTimeAsync(100);
+  expect(core.localNetworkBlocked).toBe('example.org');
+  vi.useRealTimers();
 });
 
 test('an offline core reports the browser blocking it when the permission was denied', async () => {
   localNetwork.denied = true;
   const { core, fake } = await startGated(() => Promise.reject(new TypeError('blocked')));
 
+  vi.useFakeTimers();
   fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.advanceTimersByTimeAsync(5000);
 
-  await vi.waitFor(() => {
-    expect(core.localNetworkBlocked).toBe('example.org');
-  });
+  expect(core.localNetworkBlocked).toBe('example.org');
+  vi.useRealTimers();
 });
 
 test('an offline core the page cannot reach either is just offline', async () => {
@@ -1125,15 +1282,31 @@ test('an offline core the page cannot reach either is just offline', async () =>
   expect(core.localNetworkBlocked).toBeNull();
 });
 
-test('an offline native core asks Android for local network access', async () => {
+test('an offline native core offers Android local network access instead of asking outright', async () => {
   vi.stubGlobal('navigator', { onLine: true });
+  localNetwork.unasked = true;
+  localNetwork.requestAndroid.mockClear();
   const fake = fakeTransport({ 'session.restore': session, 'session.list_accounts': [session] });
   const core = createCoreClient(() => fake.transport);
   await core.start();
 
   fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.waitFor(() => {
+    expect(core.localNetworkOffer).toBe('example.org');
+  });
+  expect(localNetwork.requestAndroid).not.toHaveBeenCalled();
 
+  await core.allowLocalNetwork();
   expect(localNetwork.requestAndroid).toHaveBeenCalledOnce();
+  expect(core.localNetworkOffer).toBeNull();
+
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.waitFor(() => {
+    expect(core.localNetworkOffer).toBe('example.org');
+  });
+  fake.emit({ type: 'sync_status', state: 'live' });
+  expect(core.localNetworkOffer).toBeNull();
+  localNetwork.unasked = false;
 });
 
 test('a cancellation for an unknown verification flow does not open the verification dialog', async () => {
@@ -1279,6 +1452,99 @@ test('soft logout retains the account to reauthenticate', async () => {
   core.stop();
 });
 
+test('a session ended by a failed lifecycle step does not ask to sign in again', async () => {
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': [session],
+  });
+  const call = fake.call.getMockImplementation();
+  if (!call) throw new Error('missing transport handler');
+  fake.call.mockImplementation((method, params) =>
+    method === 'session.switch_account'
+      ? Promise.reject(new CoreError(transportFailure('e24')))
+      : call(method, params)
+  );
+  const core = createCoreClient(() => fake.transport);
+  await core.start();
+  fake.emit({ type: 'session_ended', reason: 'lifecycle_failed' });
+  expect(core.session).toBeNull();
+  expect(core.reauthenticationAccountId).toBeNull();
+  await vi.waitFor(() => {
+    expect(core.status).not.toBe('authenticating');
+  });
+  expect(core.reauthenticationAccountId).toBeNull();
+  core.stop();
+});
+
+test('a session ended by a failed lifecycle step opens the same account again', async () => {
+  const fake = fakeTransport({
+    'session.restore': otherSession,
+    'session.list_accounts': [session, otherSession],
+    'session.switch_account': otherSession,
+  });
+  const core = createCoreClient(() => fake.transport);
+  await core.start();
+  fake.emit({ type: 'session_ended', reason: 'lifecycle_failed' });
+  await vi.waitFor(() => {
+    expect(core.session?.account_id).toBe(otherSession.account_id);
+  });
+  expect(fake.call).toHaveBeenCalledWith('session.switch_account', {
+    account_id: otherSession.account_id,
+  });
+  expect(fake.call).not.toHaveBeenCalledWith('session.switch_account', {
+    account_id: session.account_id,
+  });
+  core.stop();
+});
+
+test('a restore whose saved logins cannot be opened asks to sign in again', async () => {
+  const accounts = { accounts: [session, otherSession] };
+  const fake = fakeTransport({
+    'session.restore': null,
+    'session.list_accounts': () => accounts.accounts,
+  });
+  const call = fake.call.getMockImplementation();
+  if (!call) throw new Error('missing transport handler');
+  fake.call.mockImplementation((method, params) => {
+    if (method !== 'session.switch_account') return call(method, params);
+    const { account_id } = params as { account_id: string };
+    accounts.accounts = accounts.accounts.map((account) =>
+      account.account_id === account_id ? { ...account, needs_reauth: true } : account
+    );
+    return Promise.reject(new CoreError({ code: 'not_logged_in' }));
+  });
+  const core = createCoreClient(() => fake.transport);
+
+  await core.start();
+
+  expect(core.status).toBe('signed-out');
+  expect(core.reauthenticationAccountId).toBe(session.account_id);
+  core.stop();
+});
+
+test('switching to an account whose saved login cannot be opened shows it needs signing in again', async () => {
+  const accounts = { accounts: [session, otherSession] };
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': () => accounts.accounts,
+  });
+  const call = fake.call.getMockImplementation();
+  if (!call) throw new Error('missing transport handler');
+  fake.call.mockImplementation((method, params) => {
+    if (method !== 'session.switch_account') return call(method, params);
+    accounts.accounts = [session, { ...otherSession, needs_reauth: true }];
+    return Promise.reject(new CoreError({ code: 'not_logged_in' }));
+  });
+  const core = createCoreClient(() => fake.transport);
+  await core.start();
+
+  await expect(core.switchAccount(otherSession.account_id)).rejects.toThrow();
+
+  expect(core.accounts[1]?.needs_reauth).toBe(true);
+  expect(core.session).toEqual(session);
+  core.stop();
+});
+
 test('a rejected token retains the account to reauthenticate', async () => {
   const accounts = { accounts: [session] };
   const fake = fakeTransport({
@@ -1332,6 +1598,59 @@ test('failed profile lookups cool down across repeated timeline mounts and retry
     now.mockRestore();
     core.stop();
   }
+});
+
+test('profile lookups that failed offline are retried when sync goes live', async () => {
+  vi.useFakeTimers();
+  const fake = fakeTransport();
+  const core = createCoreClient(() => fake.transport);
+  const failure = new Error('offline');
+  fake.call.mockRejectedValueOnce(failure).mockResolvedValueOnce({ display_name: 'back' });
+  const listener = vi.fn();
+  try {
+    core.onProfileChanged(listener);
+    fake.emit({ type: 'sync_status', state: 'offline' });
+    await expect(core.userProfile('@remote:example.org')).rejects.toBe(failure);
+    await expect(core.userProfile('@remote:example.org')).rejects.toBe(failure);
+
+    fake.emit({ type: 'sync_status', state: 'live' });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(listener).toHaveBeenCalledExactlyOnceWith('@remote:example.org');
+    await expect(core.userProfile('@remote:example.org')).resolves.toEqual({
+      display_name: 'back',
+    });
+  } finally {
+    core.stop();
+    vi.useRealTimers();
+  }
+});
+
+test('an own profile that failed to load offline is reloaded when sync goes live', async () => {
+  const fake = fakeTransport({
+    'session.restore': session,
+    'session.list_accounts': [session],
+  });
+  const core = createCoreClient(() => fake.transport);
+  fake.call.mockImplementation((method: string, params: unknown) => {
+    fake.called.push({ method, params });
+    if (method === 'account.user_profile') return Promise.reject(new Error('offline'));
+    return Promise.resolve(method === 'session.list_accounts' ? [session] : session);
+  });
+  const listener = vi.fn();
+  core.onProfileChanged(listener);
+
+  await core.start();
+  fake.emit({ type: 'sync_status', state: 'offline' });
+  await vi.waitFor(() => {
+    expect(fake.called.some((call) => call.method === 'account.user_profile')).toBe(true);
+  });
+  await Promise.resolve();
+
+  fake.emit({ type: 'sync_status', state: 'live' });
+  await vi.waitFor(() => {
+    expect(listener).toHaveBeenCalledWith(session.user_id);
+  });
+  core.stop();
 });
 
 test('a profile change drops the cached profile and tells listeners once', async () => {

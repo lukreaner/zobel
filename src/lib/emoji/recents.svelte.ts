@@ -1,6 +1,8 @@
+import { createContext } from 'svelte';
+
 import type { CoreClient } from '#lib/core/client.svelte.js';
-import { DAY_MS } from '#lib/day.js';
-import { parseShortcodes } from '#lib/emoji/recent-packs.svelte.js';
+import { onEachUtcDay } from '#lib/day.js';
+import { parseShortcodes } from '#lib/emoji/parse-shortcodes.js';
 import { readJson, removeLocalValue } from '#lib/platform/local-json.js';
 
 export const REACTION_HISTORY_EVENT = 'm.recent_emoji';
@@ -30,18 +32,8 @@ export class RecentReactions {
             console.debug('[sable reactions] history unavailable', accountId, error);
           });
       };
-      let timer: ReturnType<typeof setTimeout>;
-      const nextDay = (): void => {
-        timer = setTimeout(
-          () => {
-            load();
-            nextDay();
-          },
-          DAY_MS - (Date.now() % DAY_MS)
-        );
-      };
       load();
-      nextDay();
+      const stopDays = onEachUtcDay(load);
       const stop = core.subscribeEvents((event) => {
         if (event.type === 'account_data_changed' && event.event_type === REACTION_HISTORY_EVENT) {
           load();
@@ -49,9 +41,19 @@ export class RecentReactions {
       });
       return () => {
         live = false;
-        clearTimeout(timer);
+        stopDays();
         stop();
       };
     });
   }
+}
+
+type RecentReactionsCore = ConstructorParameters<typeof RecentReactions>[0];
+
+const [useShared, provideRecentReactions, hasShared] = createContext<RecentReactions>();
+
+export { provideRecentReactions };
+
+export function useRecentReactions(core: RecentReactionsCore): RecentReactions {
+  return hasShared() ? useShared() : new RecentReactions(core);
 }

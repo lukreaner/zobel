@@ -17,6 +17,7 @@ const guard = vi.hoisted(() => ({
 
 vi.mock('#lib/ui/unsaved-guard.js', () => ({ leaveUnlessUnsaved: guard.leave }));
 
+import { afterOverlayPops } from './overlay-back.svelte.js';
 import Harness from './OverlayBackHarness.test.svelte';
 
 async function settle(): Promise<void> {
@@ -77,6 +78,21 @@ test('navigating to another page while an overlay is open does not close it', as
   fakeHistory.go(-1);
   await settle();
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('a route opened over the page with the overlay depth leaves the overlay its entry', async () => {
+  const onClose = vi.fn();
+  render(Harness, { props: { open: true, onClose } });
+  await settle();
+
+  fakeHistory.navigate('/settings/account', { overlay: 1, settings: { section: 'account' } });
+  await settle();
+  expect(fakeHistory.entries()).toBe(3);
+
+  fakeHistory.go(-1);
+  await settle();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(fakeHistory.pageStub.state.overlay).toBe(1);
 });
 
 test('back unwinds one level at a time when a second level is held', async () => {
@@ -212,4 +228,29 @@ test('an overlay closed before its entry lands leaves the one opened after it op
 
   expect(onCloseSecond).toHaveBeenCalledTimes(1);
   expect(fakeHistory.entries()).toBe(1);
+});
+
+test('waits until the popped overlay state clears', async () => {
+  const component = render(Harness, { props: { open: true, onClose: vi.fn() } });
+  await settle();
+
+  let release!: () => void;
+  vi.spyOn(window.history, 'go').mockImplementation((delta?: number) => {
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    release = () => {
+      fakeHistory.go(delta);
+    };
+  });
+
+  await component.rerender({ open: false });
+  let resolved = false;
+  const waiting = afterOverlayPops().then(() => {
+    resolved = true;
+  });
+  await settle();
+  expect(resolved).toBe(false);
+
+  release();
+  await waiting;
+  expect(resolved).toBe(true);
 });

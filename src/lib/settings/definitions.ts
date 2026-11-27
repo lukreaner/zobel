@@ -10,7 +10,10 @@ import type { RoomSort } from '#lib/rooms/room-sort.js';
 import { SYSTEM_TIME_ZONE, timeZoneValues } from '#lib/ui/time-zones.js';
 import { languageValues, SYSTEM_LANGUAGE } from '#lib/locales.js';
 import { isNightlyBuild } from '#lib/platform/build-channel.js';
-import { customTitleBarDefault } from '#lib/platform/window-decorations.js';
+import {
+  customTitleBarDefault,
+  hardwareVideoEncodeDefault,
+} from '#lib/platform/window-decorations.js';
 import { isNativeMobile } from '#lib/platform/os.js';
 import type { BadgeNotificationMode } from '#lib/rooms/unread.js';
 
@@ -21,6 +24,7 @@ export type TimelineLayout = 'modern' | 'compact' | 'bubble';
 export type MessageSpacing = 'none' | 'compact' | 'cozy' | 'roomy';
 export type MediaAutoLoad = MediaPreviewsView;
 export type ImageMetadata = 'location' | 'all' | 'keep';
+export type MatrixLinkSelector = 'sable' | 'matrix' | 'custom';
 export type TimelineEmoteSize = 'default' | '20' | '24' | '32' | '48' | '64';
 export type DateFormat = 'auto' | 'dmy' | 'mdy' | 'ymd';
 export type WeekStart = 'sunday' | 'monday' | 'saturday';
@@ -271,7 +275,11 @@ const SETTINGS = {
     { account: true }
   ),
   theme: choice<ThemeMode>(['system', 'dark', 'light'], 'system', { account: true }),
+  deploymentTheme: toggle(true, { account: true }),
+  saturation: range(0, 2, 1, { device: true }),
   quickCss: text(''),
+  chatBackgroundImage: text('', { account: true }),
+  chatBackgroundColor: text('', { account: true }),
   fontFamily: text('', { account: true, device: true }),
   fontFamilyMono: text('', { account: true, device: true }),
   codeLigatures: toggle(true, { account: true }),
@@ -293,8 +301,10 @@ const SETTINGS = {
   showRoomIcon: choice<ShowRoomIcon>(['always', 'sometimes', 'collapsed', 'never'], 'always', {
     account: true,
   }),
+  showEncryptionStatusIcon: toggle(true, { account: true }),
   voiceParticipantPlacement: choice(['both', 'below', 'inline'], 'both', { account: true }),
   showRoomBanners: toggle(true, { account: true }),
+  bannerFit: choice(['fixed', 'image'], 'fixed', { account: true }),
   showDmTopics: toggle(true, { account: true }),
   messagePreviews: choice<MessagePreviews>(['off', 'direct', 'rooms', 'all'], 'off', {
     account: true,
@@ -325,6 +335,7 @@ const SETTINGS = {
   tintRoomIcons: toggle(false, { account: true }),
   showBridgeBadges: toggle(true, { account: true }),
   showSpaceEvents: toggle(true, { account: true }),
+  showActiveThreadsInSidebar: toggle(true, { account: true }),
   showAlertZoo: toggle(false),
 
   hour24Clock: toggle(false, { account: true }),
@@ -336,6 +347,7 @@ const SETTINGS = {
   hideProfileChanges: toggle(true, { account: true }),
   hideTopicChanges: toggle(false, { account: true }),
   hideMemberInReadOnly: toggle(true, { account: true }),
+  hideSentBeforeJoined: toggle(false, { account: true }),
   showTombstoneEvents: toggle(true, { account: true }),
   openRoomsAtUnread: toggle(true, { account: true }),
   jumpToLatestOnSend: toggle(false, { account: true }),
@@ -361,8 +373,12 @@ const SETTINGS = {
   memberSort: choice<MemberSort>(['name-asc', 'name-desc', 'newest', 'oldest'], 'name-asc', {
     account: true,
   }),
-  roomSort: choice<RoomSort>(['recent', 'name-asc', 'name-desc'], 'recent', { account: true }),
-  directSort: choice<RoomSort>(['recent', 'name-asc', 'name-desc'], 'recent', { account: true }),
+  roomSort: choice<RoomSort>(['recent', 'unread-first', 'name-asc', 'name-desc'], 'recent', {
+    account: true,
+  }),
+  directSort: choice<RoomSort>(['recent', 'unread-first', 'name-asc', 'name-desc'], 'recent', {
+    account: true,
+  }),
   groupMembersByPresence: toggle(true, { account: true }),
   filterPronounsByLanguage: toggle(true, { account: true }),
   showPronouns: toggle(true, { account: true }),
@@ -397,6 +413,10 @@ const SETTINGS = {
   sendAttachmentAsCaption: toggle(true, { account: true }),
   sendAttachmentsAsGallery: toggle(false, { account: true }),
   imageMetadata: choice<ImageMetadata>(['location', 'all', 'keep'], 'location'),
+  matrixLinkSelector: choice<MatrixLinkSelector>(['sable', 'matrix', 'custom'], 'sable', {
+    account: true,
+  }),
+  matrixLinkCustom: text('', { account: true }),
 
   personaPicker: toggle(true, { account: true }),
   personaPickerSortOrder: choice<PersonaPickerSortOrder>(
@@ -490,10 +510,10 @@ const SETTINGS = {
   callCameraResolution: choice(CALL_VIDEO_RESOLUTIONS, 'auto'),
   callCameraBitrate: choice(CALL_VIDEO_BITRATES, 'auto'),
   callCameraCodec: choice(CALL_VIDEO_CODECS, 'auto'),
-  callScreenResolution: choice(CALL_VIDEO_RESOLUTIONS, '720'),
+  callScreenResolution: choice(CALL_VIDEO_RESOLUTIONS, '1080'),
   callScreenBitrate: choice(CALL_VIDEO_BITRATES, 'auto'),
   callScreenFramerate: choice(CALL_SCREEN_FRAMERATES, '30'),
-  callScreenCodec: choice(CALL_VIDEO_CODECS, 'h264'),
+  callScreenCodec: choice(CALL_VIDEO_CODECS, 'vp8'),
   callSimulcast: toggle(true),
 
   /** Empty falls back to `config.json`; see `hasCompleteOverride`. */
@@ -530,7 +550,7 @@ const SETTINGS = {
   showSystemTrayIcon: toggle(true, { device: true }),
   useCustomTitleBar: toggle(customTitleBarDefault(), { device: true }),
   hardwareAcceleration: toggle(true, { device: true }),
-  hardwareVideoEncode: toggle(true, { device: true }),
+  hardwareVideoEncode: toggle(hardwareVideoEncodeDefault(), { device: true }),
   hardwareVideoDecode: toggle(true, { device: true }),
   smoothScrolling: toggle(true, { device: true }),
   webRtcIpPolicy: choice(WEBRTC_IP_POLICIES, 'default', { device: true }),
@@ -571,6 +591,7 @@ export type TimelinePreferences = Pick<
   | 'hideProfileChanges'
   | 'hideTopicChanges'
   | 'hideMemberInReadOnly'
+  | 'hideSentBeforeJoined'
   | 'showTombstoneEvents'
   | 'showHiddenEvents'
   | 'hiddenEventEdits'

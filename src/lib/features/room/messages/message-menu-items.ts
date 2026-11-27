@@ -1,6 +1,7 @@
 import type { Component } from 'svelte';
 
 import BookmarkIcon from 'phosphor-svelte/lib/BookmarkSimpleIcon';
+import CheckSquareIcon from 'phosphor-svelte/lib/CheckSquareIcon';
 import CodeIcon from 'phosphor-svelte/lib/CodeIcon';
 import CopyIcon from 'phosphor-svelte/lib/CopyIcon';
 import DownloadIcon from 'phosphor-svelte/lib/DownloadSimpleIcon';
@@ -22,7 +23,7 @@ import ReceiptIcon from 'phosphor-svelte/lib/EyeIcon';
 import ReplyIcon from 'phosphor-svelte/lib/ArrowBendUpLeftIcon';
 import ShareIcon from 'phosphor-svelte/lib/ShareNetworkIcon';
 import StealIcon from 'phosphor-svelte/lib/StickerIcon';
-import ThreadIcon from 'phosphor-svelte/lib/ChatCircleDotsIcon';
+import ThreadIcon from 'phosphor-svelte/lib/ScribbleLoopIcon';
 import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
 import UserSwitchIcon from 'phosphor-svelte/lib/UserSwitchIcon';
 
@@ -34,6 +35,7 @@ export type MessageActions = {
   onReadReceipts?: () => void;
   onEditHistory?: () => void;
   onMarkUnread?: () => void;
+  onSelect?: () => void;
   onReply?: () => void;
   onOpenThread?: () => void;
   onEdit?: () => void;
@@ -43,6 +45,8 @@ export type MessageActions = {
   onCopyText?: () => void;
   copyTextLabel?: string;
   onCopyLink?: () => void;
+  onCopyMatrixLink?: () => void;
+  linkDestination?: string;
   onCopyHref?: () => void;
   onShareHref?: () => void;
   onPin?: () => void;
@@ -78,14 +82,6 @@ export type MessageMenuRow = {
 export function messageMenuRows(actions: MessageActions): MessageMenuRow[] {
   const rows: MessageMenuRow[] = [];
 
-  if (actions.onAddReaction) {
-    rows.push({
-      key: 'add-reaction',
-      label: 'timeline.addReaction',
-      icon: EmojiIcon,
-      run: actions.onAddReaction,
-    });
-  }
   if (actions.onReply) {
     rows.push({
       key: 'reply',
@@ -136,6 +132,14 @@ export function messageMenuRows(actions: MessageActions): MessageMenuRow[] {
       label: 'timeline.shareLink',
       icon: ShareIcon,
       run: actions.onShareHref,
+    });
+  }
+  if (actions.onCopyMatrixLink) {
+    rows.push({
+      key: 'matrix-link',
+      label: 'timeline.copyMatrixLink',
+      icon: LinkIcon,
+      run: actions.onCopyMatrixLink,
     });
   }
   if (actions.onCopyLink) {
@@ -219,13 +223,22 @@ export function messageMenuRows(actions: MessageActions): MessageMenuRow[] {
       run: actions.onDownloadEmotes,
     });
   }
+  if (actions.onSelect) {
+    rows.push({
+      key: 'select',
+      label: 'timeline.selectMessage',
+      icon: CheckSquareIcon,
+      run: actions.onSelect,
+      separated: true,
+    });
+  }
   if (actions.onMarkUnread) {
     rows.push({
       key: 'mark-unread',
       label: 'timeline.markUnread',
       icon: MarkUnreadIcon,
       run: actions.onMarkUnread,
-      separated: true,
+      separated: !actions.onSelect,
     });
   }
   if (actions.onViewReactions) {

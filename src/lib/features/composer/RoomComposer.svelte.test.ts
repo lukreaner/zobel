@@ -46,6 +46,7 @@ afterEach(() => {
   mediaConfig.mockReset();
   mediaConfig.mockResolvedValue({ upload_size: 100 * 1024 * 1024 });
   clearDrafts();
+  setPreference('composerForm', 'tall');
   setPreference('formattingToolbar', false);
   setPreference('composerFormatButton', true);
   setPreference('composerButtonOrder', ['gif', 'sticker', 'emoticon', 'persona', 'format']);
@@ -136,6 +137,8 @@ function core(): CoreClient {
         mediaConfig,
         frequentReactions: () => Promise.resolve([]),
         rememberEmoji: () => Promise.resolve(null),
+        recentStickers: () => Promise.resolve([]),
+        rememberSticker: () => Promise.resolve(null),
       },
       room_state: { botCommands: () => Promise.resolve(botCommands) },
       personas: {
@@ -2031,13 +2034,13 @@ test('an edited scheduled message loads its text and saves through its own time'
     context: {
       kind: 'schedule',
       eventId: 'delay',
-      body: 'see you tomorow',
+      body: 'see you tomorrow',
       scheduled: { source: 'server', dueTs },
     },
   });
   await flushed();
 
-  expect(editorText()).toBe('see you tomorow');
+  expect(editorText()).toBe('see you tomorrow');
 
   submit();
   await flushed();
@@ -2051,7 +2054,7 @@ test('an edited scheduled message loads its text and saves through its own time'
   if (!scheduleForm) throw new Error('schedule form not found');
   await fireEvent.submit(scheduleForm);
 
-  expect(schedule).toHaveBeenCalledWith('!room:example.org', 'see you tomorow', null, dueTs);
+  expect(schedule).toHaveBeenCalledWith('!room:example.org', 'see you tomorrow', null, dueTs);
 });
 
 test('a press beside the text focuses the editor, and one on a button does not', async () => {
@@ -2124,6 +2127,37 @@ test('the expand button makes the editor taller and keeps focus in it', async ()
   expect(toggle).toHaveAttribute('aria-pressed', 'true');
   expect(document.querySelector('.editor')).toHaveClass('expanded');
   expect(document.querySelector('[contenteditable="true"]')).toHaveFocus();
+});
+
+test('an expanded composer keeps the expand button laid out while it is empty', async () => {
+  setPreference('composerForm', 'short');
+  setup({ roomId: '!room:example.org' });
+  await flushed();
+  expect(document.querySelector('.composer-row')).toHaveClass('short');
+
+  await press(screen.getByRole('button', { name: 'Expand composer' }));
+
+  expect(document.querySelector('.editor')).toHaveClass('expanded');
+  expect(document.querySelector('.composer-row')).not.toHaveClass('short');
+});
+
+test('sending a message collapses an expanded composer', async () => {
+  setPreference('composerForm', 'short');
+  draftText('hello');
+  const send = vi.fn(async () => {});
+  setup({ roomId: '!room:example.org', onSend: send });
+  await flushed();
+  await press(screen.getByRole('button', { name: 'Expand composer' }));
+  expect(document.querySelector('.editor')).toHaveClass('expanded');
+
+  submit();
+
+  await vi.waitFor(() => {
+    expect(send).toHaveBeenCalled();
+  });
+  await vi.waitFor(() => {
+    expect(document.querySelector('.editor')).not.toHaveClass('expanded');
+  });
 });
 
 test('the insert menu offers scheduling once there is something to send', async () => {
@@ -2948,4 +2982,39 @@ test('a send that fails after leaving the room returns its text to that room, no
   switchRoom?.('!first:example.org');
   await flushed();
   expect(editorText()).toBe('meant for the first room');
+});
+
+test.each([
+  ['pending', () => new Promise<string[]>(() => {}), 'example.org'],
+  ['failed', () => Promise.reject(new Error('members unavailable')), 'example.org'],
+  ['empty', () => Promise.resolve([]), 'example.org'],
+  ['resolved', () => Promise.resolve(['busy.example']), 'busy.example'],
+])('a room mention sent with a %s via lookup stays routable', async (_, viaServers, server) => {
+  const client = Object.assign(core(), { session: { user_id: '@me:example.org' } });
+  Object.assign(client.rpc, { rooms: { viaServers } });
+  const onSend = vi.fn(async () => {});
+  draftText('#off');
+  setup({ roomId: '!room:example.org', onSend }, client, [
+    {
+      room_id: '!offtopic',
+      name: 'Offtopic',
+      display_name: 'Offtopic',
+      canonical_alias: null,
+      display_avatar_url: null,
+      state: 'joined',
+    } as unknown as RoomListItemView,
+  ]);
+
+  await press(await screen.findByRole('option', { name: /Offtopic/ }));
+  await flushed();
+  submit();
+
+  await vi.waitFor(() => {
+    expect(onSend).toHaveBeenCalledWith(
+      '!room:example.org',
+      expect.any(String),
+      expect.stringContaining(`matrix:roomid/offtopic?via=${server}"`),
+      expect.anything()
+    );
+  });
 });

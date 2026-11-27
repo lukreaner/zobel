@@ -18,6 +18,7 @@
   import UsersThreeIcon from 'phosphor-svelte/lib/UsersThreeIcon';
 
   import { i18n } from '#lib/i18n.js';
+  import type { PermalinkFormat } from '#lib/rooms/permalink.js';
   import { whenVisible } from '#lib/ui/when-visible.js';
   import ActionMenu from '#lib/ui/primitives/ActionMenu.svelte';
   import ActionMenuItem from '#lib/ui/primitives/ActionMenuItem.svelte';
@@ -35,7 +36,7 @@
     LobbyAction,
     LobbyDragItem,
   } from './space-hierarchy';
-  import { placeholderRows } from './space-hierarchy';
+  import { placeholderRows, privateChildIds } from './space-hierarchy';
   import LobbyRoomPlaceholder from './LobbyRoomPlaceholder.svelte';
 
   interface Props {
@@ -60,7 +61,11 @@
       parentId: string,
       action: LobbyAction
     ) => void;
-    onCopyLink: (child: HierarchyRoomView) => void;
+    onCopyLink: (
+      child: HierarchyRoomView,
+      parentId: string | null,
+      format: PermalinkFormat
+    ) => void;
     onRemove: (section: HierarchySection, entry: HierarchyRoom) => void;
     dragList: DragList<LobbyDragItem>;
     onDropRoom: (
@@ -123,6 +128,7 @@
   let dropState = $state<DropState<LobbyDragItem> | null>(null);
   let headerDrop = $state(false);
   let parentId = $derived(section.parent_id);
+  let privateIds = $derived(privateChildIds(section.siblings));
   let unloaded = $derived(section.space !== null && !section.loaded && !section.failed);
 
   function dropTarget(roomId: string | null) {
@@ -231,12 +237,13 @@
           >
             <HouseIcon size={16} />{i18n.t('room.lobbyOpenSubspace')}
           </ActionMenuItem>
-          <ActionMenuItem
-            onSelect={() => {
-              onCopyLink(sectionSpace);
-            }}
-          >
-            <LinkIcon size={16} />{i18n.t('room.menuCopyLink')}
+          <ActionMenuItem onSelect={() => onCopyLink(sectionSpace, ownerId, 'matrix')}>
+            <LinkIcon size={16} />
+            {i18n.t('timeline.copyMatrixLink')}
+          </ActionMenuItem>
+          <ActionMenuItem onSelect={() => onCopyLink(sectionSpace, ownerId, 'external')}>
+            <LinkIcon size={16} />
+            {i18n.t('timeline.copyExternalLink')}
           </ActionMenuItem>
           {#if joinedSpace}
             <ActionMenuItem
@@ -317,6 +324,7 @@
           {@const roomId = child.room_id}
           {@const joined = joinedIds.has(child.room_id)}
           {@const action = entry.action}
+          {@const editable = canManage && !privateIds.has(roomId)}
           <li
             class={[
               'room',
@@ -328,14 +336,14 @@
                   dropState?.item.roomId === child.room_id && dropState.instruction === 'below',
               },
             ]}
-            {@attach canManage
+            {@attach editable
               ? dragList.draggable({ parentId, roomId }, (next) => {
                   dragging = next?.roomId ?? null;
                 })
               : undefined}
-            {@attach canManage ? dropTarget(roomId) : undefined}
+            {@attach editable ? dropTarget(roomId) : undefined}
           >
-            {#if canManage}
+            {#if editable}
               <span class="drag-handle" aria-hidden="true"><DotsSixVerticalIcon /></span>
             {/if}
             <Avatar id={child.room_id} src={child.avatar_url} name={label(child)} size="small" />
@@ -408,14 +416,15 @@
                   </button>
                 {/snippet}
                 <IconContext values={{ 'aria-hidden': 'true' }}>
-                  <ActionMenuItem
-                    onSelect={() => {
-                      onCopyLink(child);
-                    }}
-                  >
-                    <LinkIcon size={16} />{i18n.t('room.menuCopyLink')}
+                  <ActionMenuItem onSelect={() => onCopyLink(child, parentId, 'matrix')}>
+                    <LinkIcon size={16} />
+                    {i18n.t('timeline.copyMatrixLink')}
                   </ActionMenuItem>
-                  {#if canManage}
+                  <ActionMenuItem onSelect={() => onCopyLink(child, parentId, 'external')}>
+                    <LinkIcon size={16} />
+                    {i18n.t('timeline.copyExternalLink')}
+                  </ActionMenuItem>
+                  {#if editable}
                     <ActionMenuItem
                       onSelect={() => {
                         onSetSuggested(section.parent_id, child.room_id, !entry.suggested);

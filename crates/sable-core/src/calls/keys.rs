@@ -270,6 +270,15 @@ impl KeyDistributor {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    pub(crate) fn set_identity(&mut self, identity: String) {
+        self.identity = identity;
+    }
+
     pub(crate) const fn set_wire(&mut self, wire: super::membership::RtcWire) {
         self.wire = wire;
     }
@@ -934,8 +943,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, not(target_family = "wasm")))]
-#[expect(clippy::unwrap_used, reason = "test code")]
+#[cfg(test)]
+#[cfg(not(target_family = "wasm"))]
 mod sdk_tests {
     use matrix_sdk::ruma::{device_id, owned_room_id, owned_user_id, room_id, user_id};
     use matrix_sdk::test_utils::mocks::MatrixMockServer;

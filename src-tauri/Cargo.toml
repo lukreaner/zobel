@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "26.11.2"
+version = "26.11.4"
 description = "A Tauri App"
 authors = ["you"]
 license.workspace = true
@@ -92,13 +92,15 @@ tauri-plugin-geolocation = { version = "2.3.3", optional = true }
 tauri-plugin-notifications = { version = "0.5.0", git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "b97e58f58dc04dc75c9e62e95ccb04f5202d47c5", default-features = false, features = [
   "push-notifications",
 ] }
-tauri-plugin-livekit-mobile = { version = "0.2.0", git = "https://github.com/SableClient/tauri-plugin-livekit-mobile.git", rev = "f7a0d9e3994ab319f44fa9414a4e92516f18aad3" }
+tauri-plugin-livekit-mobile = { version = "0.2.0", git = "https://github.com/SableClient/tauri-plugin-livekit-mobile.git", rev = "5f3e8e32d93968b21404252981139e14c506951a" }
 # Injects the --safe-area-inset-* custom properties: Android reports the system
 # bars to nobody, and `env()` there only covers a display cutout.
 tauri-plugin-edge-to-edge = { version = "0.3.3", git = "https://github.com/SableClient/tauri-plugin-edge-to-edge.git", rev = "45a98971fc4957db32cb5f5985a8d8687eb3dc15" }
 # `navigator.share` reaches no webview we ship, so the system share sheet only
 # comes from the native side.
 tauri-plugin-sharekit = "=0.4.0-rc.8"
+# The webviews mute `<audio>` in the background, the system player keeps going.
+tauri-plugin-native-audio = { version = "1.0.5", git = "https://github.com/SableClient/tauri-plugin-native-audio.git", rev = "1bbab74ed550b8395fdd287a25542c2b99624597" }
 
 [target."cfg(target_os = \"ios\")".dependencies]
 # backtrace 0.3.76 needs dyld bindings that libc 0.2.190 removed on iOS.

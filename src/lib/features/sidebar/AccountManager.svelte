@@ -100,17 +100,25 @@
   });
 
   $effect(() => {
-    if (!activeUserId) return;
+    const userId = activeUserId;
+    if (!userId) return;
 
     let cancelled = false;
-    void core.userProfile(activeUserId).then(
-      (next) => {
-        if (!cancelled) profile = next;
-      },
-      (cause: unknown) => console.debug('[sable nav] own profile unavailable', cause)
-    );
+    const load = () => {
+      void core.userProfile(userId).then(
+        (next) => {
+          if (!cancelled) profile = next;
+        },
+        (cause: unknown) => console.debug('[sable nav] own profile unavailable', cause)
+      );
+    };
+    load();
+    const stop = core.onProfileChanged((changed) => {
+      if (changed === userId) load();
+    });
     return () => {
       cancelled = true;
+      stop();
     };
   });
 
@@ -465,7 +473,7 @@
     border-radius: var(--radius);
   }
 
-  .account-profile :global(.profile-card .profile-card-cover:not(.has-banner)) {
+  .account-profile :global(.profile-card .profile-card-cover:not(.fit-banner)) {
     height: 8rem;
   }
 

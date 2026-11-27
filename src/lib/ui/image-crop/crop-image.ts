@@ -3,6 +3,8 @@ import { MAX_CANVAS_PIXELS } from '#lib/ui/canvas-limits.js';
 import { type Rect, type Rotation, rotatedSize } from './geometry.js';
 
 const KEPT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+/** Photo formats a canvas cannot re-encode, so opaque ones become JPEG rather than PNG. */
+const PHOTO_TYPES = new Set(['image/heic', 'image/heif']);
 const EXTENSIONS: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -14,6 +16,15 @@ export interface Crop {
   rect: Rect;
   rotation: Rotation;
   maxEdge?: number;
+}
+
+function isOpaque(context: CanvasRenderingContext2D, { width, height }: HTMLCanvasElement) {
+  const rows = Math.max(1, Math.floor(1_048_576 / width));
+  for (let y = 0; y < height; y += rows) {
+    const { data } = context.getImageData(0, y, width, Math.min(rows, height - y));
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return false;
+  }
+  return true;
 }
 
 export async function cropImage(file: File, { rect, rotation, maxEdge }: Crop): Promise<File> {
@@ -38,7 +49,11 @@ export async function cropImage(file: File, { rect, rotation, maxEdge }: Crop): 
     context.rotate((rotation * Math.PI) / 180);
     context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
 
-    const type = KEPT_TYPES.has(file.type) ? file.type : 'image/png';
+    const type = KEPT_TYPES.has(file.type)
+      ? file.type
+      : PHOTO_TYPES.has(file.type) && isOpaque(context, canvas)
+        ? 'image/jpeg'
+        : 'image/png';
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, type, 0.92);
     });

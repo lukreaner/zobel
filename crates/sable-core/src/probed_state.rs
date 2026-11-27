@@ -1,3 +1,4 @@
+use crate::SignedIn;
 use crate::now_ms;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,6 +13,9 @@ use crate::protocol::RoomStateEventView;
 
 const MAX_PROBED_ROOMS: usize = 32;
 
+/// A state event's content, and its `origin_server_ts` when known.
+type ProbedEvent = (Value, Option<u64>);
+
 #[derive(Default)]
 pub(crate) struct ProbedState {
     rooms: HashMap<OwnedRoomId, ProbedRoom>,
@@ -24,13 +28,13 @@ pub(crate) struct ProbedState {
 pub(crate) enum Probed {
     Unknown,
     Absent,
-    Present(Value),
+    Present(Value, Option<u64>),
 }
 
 #[derive(Default)]
 struct ProbedRoom {
     full: Option<HashMap<String, Vec<RoomStateEventView>>>,
-    keys: HashMap<(String, String), Option<Value>>,
+    keys: HashMap<(String, String), Option<ProbedEvent>>,
     written: u64,
 }
 
@@ -53,14 +57,14 @@ impl ProbedState {
                 .get(event_type)
                 .and_then(|events| events.iter().find(|event| event.state_key == state_key))
                 .map_or(Probed::Absent, |event| {
-                    Probed::Present(event.content.clone())
+                    Probed::Present(event.content.clone(), None)
                 });
         }
         match room
             .keys
             .get(&(event_type.to_owned(), state_key.to_owned()))
         {
-            Some(Some(content)) => Probed::Present(content.clone()),
+            Some(Some((content, ts))) => Probed::Present(content.clone(), *ts),
             Some(None) => Probed::Absent,
             None => Probed::Unknown,
         }
@@ -81,7 +85,7 @@ impl ProbedState {
         room_id: &RoomId,
         event_type: &str,
         state_key: &str,
-        content: Option<Value>,
+        content: Option<ProbedEvent>,
     ) {
         self.room_mut(room_id)
             .keys
@@ -111,7 +115,7 @@ impl ProbedState {
         event_type: &str,
         state_key: &str,
         now: u64,
-    ) -> Option<Value> {
+    ) -> Option<(Value, u64)> {
         self.written
             .get(&(
                 room_id.to_owned(),
@@ -119,7 +123,7 @@ impl ProbedState {
                 state_key.to_owned(),
             ))
             .filter(|(at, _)| now.saturating_sub(*at) < RECENT_STATE_MS)
-            .map(|(_, content)| content.clone())
+            .map(|(at, content)| (content.clone(), *at))
     }
 
     pub(crate) fn remember_written(
@@ -159,9 +163,11 @@ impl ProbedState {
     }
 }
 
-impl crate::Core {
-    pub(crate) fn probed_state(&self) -> parking_lot::MutexGuard<'_, ProbedState> {
-        self.probed_state.lock()
+impl SignedIn {
+    pub(crate) fn probed_state(
+        &self,
+    ) -> parking_lot::ArcMutexGuard<parking_lot::RawMutex, ProbedState> {
+        self.state().probed_state.lock_arc()
     }
 }
 
@@ -177,12 +183,12 @@ pub(crate) struct RecentState {
     members: HashMap<OwnedRoomId, u64>,
 }
 
-impl crate::Core {
+impl SignedIn {
     pub(crate) async fn room_state_snapshot(
         &self,
-        client: &matrix_sdk::Client,
         room_id: &RoomId,
     ) -> matrix_sdk::Result<RoomStateSnapshot> {
+        let client = self.client();
         let fetch = {
             let mut recent = self.recent_state();
             recent.fetches.retain(|_, lock| Arc::strong_count(lock) > 1);
@@ -220,7 +226,8 @@ impl crate::Core {
         self.recent_state().rooms.remove(room_id);
     }
 
-    pub(crate) fn watch_room_state(self: &Arc<Self>, client: &matrix_sdk::Client) {
+    pub(crate) fn watch_room_state(&self) {
+        let client = self.client();
         let handle = client.add_event_handler({
             let core = self.clone();
             move |raw: Raw<AnySyncStateEvent>, room: matrix_sdk::Room| {
@@ -263,8 +270,8 @@ impl crate::Core {
         self.recent_state().members.remove(room_id);
     }
 
-    fn recent_state(&self) -> parking_lot::MutexGuard<'_, RecentState> {
-        self.recent_state.lock()
+    fn recent_state(&self) -> parking_lot::ArcMutexGuard<parking_lot::RawMutex, RecentState> {
+        self.state().recent_state.lock_arc()
     }
 }
 
@@ -284,7 +291,7 @@ mod tests {
 
         assert_eq!(
             state.written(&room_id, "m.room.topic", "", 1_000 + RECENT_STATE_MS - 1),
-            Some(json!({"topic": "new"}))
+            Some((json!({"topic": "new"}), 1_000))
         );
         assert_eq!(
             state.written(&room_id, "m.room.topic", "", 1_000 + RECENT_STATE_MS),

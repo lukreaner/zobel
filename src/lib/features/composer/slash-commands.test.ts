@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { expect, test, vi } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 
 import { CoreError } from '#src/transport';
 
@@ -12,6 +12,7 @@ import type {
   PersonaView,
   RoomPreviewView,
   RpcParams,
+  InviteHistoryView,
   ShareHistoryView,
   Rpc,
 } from '#src/generated/protocol';
@@ -25,12 +26,13 @@ import {
 } from './slash-commands';
 
 import { testPersona } from '#lib/personas/persona.ts';
+import { preferences } from '#lib/settings/preferences.svelte.js';
 import { memberView } from '#lib/test-support/room-views.js';
 
 function fakeCommands() {
   return {
     banUser: vi.fn(() => Promise.resolve()),
-    inviteUser: vi.fn(() => Promise.resolve()),
+    inviteUser: vi.fn(() => Promise.resolve<InviteHistoryView>('not_shared')),
     joinRoom: vi.fn(() => Promise.resolve('!joined:example.org')),
     kickUser: vi.fn(() => Promise.resolve()),
     knockRoom: vi.fn(() => Promise.resolve('!knocked:example.org')),
@@ -135,8 +137,8 @@ function context(
 }
 
 test('plain text is not a command', () => {
-  expect(parseSlash('hello')).toEqual({ kind: 'none' });
-  expect(parseSlash('and/or')).toEqual({ kind: 'none' });
+  expect(parseSlash('hello', null, 'matrix.to')).toEqual({ kind: 'none' });
+  expect(parseSlash('and/or', null, 'matrix.to')).toEqual({ kind: 'none' });
 });
 
 test('/bugreport opens the report flow', async () => {
@@ -149,7 +151,11 @@ test('/bugreport opens the report flow', async () => {
 });
 
 test('a doubled slash escapes a message that starts with one', async () => {
-  expect(parseSlash('//me is literal')).toEqual({ kind: 'literal', body: '/me is literal' });
+  expect(parseSlash('//me is literal', null, 'matrix.to')).toEqual({
+    kind: 'literal',
+    body: '/me is literal',
+    formatted: null,
+  });
 
   await expect(runSlash('//me is literal', context(fakeCommands()))).resolves.toEqual({
     kind: 'message',
@@ -159,8 +165,22 @@ test('a doubled slash escapes a message that starts with one', async () => {
   });
 });
 
+test('a doubled slash keeps the formatted body, less one slash', async () => {
+  const commands = {
+    ...context(fakeCommands()),
+    formatted: '//foo <span data-mx-spoiler>bar</span>',
+  };
+
+  await expect(runSlash('//foo ||bar||', commands)).resolves.toEqual({
+    kind: 'message',
+    body: '/foo ||bar||',
+    msgtype: 'text',
+    formatted: '/foo <span data-mx-spoiler>bar</span>',
+  });
+});
+
 test('the command name is matched without regard to case', () => {
-  const parsed = parseSlash('/ME waves');
+  const parsed = parseSlash('/ME waves', null, 'matrix.to');
 
   expect(parsed).toMatchObject({ kind: 'command', name: 'me' });
 });
@@ -247,7 +267,7 @@ test('a mention pill stands in for the user id a command asks for', async () => 
 
   await runSlash('/headpat @Kris', {
     ...context(commands),
-    formatted: '/headpat <a href="https://link.sable.moe/#/@kris:example.org">@Kris</a>',
+    formatted: '/headpat <a href="matrix:u/kris:example.org">@Kris</a>',
   });
 
   expect(commands.sendGesture).toHaveBeenCalledWith({
@@ -381,6 +401,21 @@ test('/join takes an address and its routing servers', async () => {
     address: '#room:example.org',
     via: ['other.org'],
   });
+});
+
+test('/join takes a link on the custom link host', async () => {
+  preferences.matrixLinkSelector = 'custom';
+  preferences.matrixLinkCustom = 'links.example.org';
+  onTestFinished(() => {
+    preferences.matrixLinkSelector = 'sable';
+    preferences.matrixLinkCustom = '';
+  });
+  const commands = fakeCommands();
+
+  await expect(
+    runSlash('/join https://links.example.org/#/!abc:example.org?via=one.org', context(commands))
+  ).resolves.toEqual({ kind: 'done' });
+  expect(commands.joinRoom).toHaveBeenCalledWith({ address: '!abc:example.org', via: ['one.org'] });
 });
 
 test('/join hands a knock room over to the ask to join page', async () => {
@@ -597,14 +632,41 @@ test('/sharehistory shares the room history with one user', async () => {
   });
 });
 
-test('/sharehistory says why nothing was shared', async () => {
+test('/invite says when the invite went out without its history', async () => {
+  const commands = fakeCommands();
+  commands.inviteUser.mockResolvedValue('failed');
+
+  await expect(runSlash('/invite @bob:example.org', context(commands))).resolves.toEqual({
+    kind: 'done',
+    notice: { key: 'room.inviteSentHistoryFailed', values: { user: '@bob:example.org' } },
+  });
+});
+
+test('/sharehistory confirms when the keys went out', async () => {
   const rpc = fakeRpc();
-  rpc.encryption.shareHistory.mockResolvedValue('no_cross_signing');
 
   await expect(
     runSlash('/sharehistory @bob:example.org', context(fakeCommands(), rpc))
-  ).rejects.toMatchObject({ key: 'composer.slashShareHistory.no_cross_signing' });
+  ).resolves.toEqual({
+    kind: 'done',
+    notice: { key: 'composer.slashShareHistory.shared', values: { user: '@bob:example.org' } },
+  });
 });
+
+test.each(['no_cross_signing', 'not_invited', 'no_verified_devices', 'nothing_to_share'] as const)(
+  '/sharehistory says why nothing was shared: %s',
+  async (outcome) => {
+    const rpc = fakeRpc();
+    rpc.encryption.shareHistory.mockResolvedValue(outcome);
+
+    await expect(
+      runSlash('/sharehistory @bob:example.org', context(fakeCommands(), rpc))
+    ).rejects.toMatchObject({
+      key: `composer.slashShareHistory.${outcome}`,
+      values: { user: '@bob:example.org' },
+    });
+  }
+);
 
 test('/acl hands the flags to the core', async () => {
   const rpc = fakeRpc();

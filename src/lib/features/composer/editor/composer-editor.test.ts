@@ -203,6 +203,27 @@ describe('attachVia', () => {
     expect(doc && serializeComposer(doc).body).toBe('#Sable later');
   });
 
+  test('replaces only the placeholder server', () => {
+    const editor = open();
+    for (const server of ['own.example', 'chosen.example']) {
+      editor.insert(
+        composerSchema.nodes.mention.create({
+          userId: '!abc:example.org',
+          name: '#Sable',
+          via: [server],
+        })
+      );
+    }
+
+    editor.attachVia('!abc:example.org', ['busy.example'], 'own.example');
+    const doc = editor.doc();
+    const formatted = doc && serializeComposer(doc).formatted;
+
+    expect(formatted).toContain('via=busy.example');
+    expect(formatted).toContain('via=chosen.example');
+    expect(formatted).not.toContain('via=own.example');
+  });
+
   test('does not become its own undo step', () => {
     const editor = open();
     editor.insert(roomMention());
@@ -1341,6 +1362,27 @@ describe('pasting', () => {
       }
     });
     expect(hrefs).toEqual(['https://example.org']);
+  });
+
+  test('a matrix: URI pasted over a selection links it instead of replacing it', () => {
+    const editor = open();
+    editor.setText('the docs');
+    const editorView = view(editor);
+    editorView.dispatch(
+      editorView.state.tr.setSelection(
+        TextSelection.create(editorView.state.doc, 1, editorView.state.doc.content.size - 1)
+      )
+    );
+    editorView.pasteText('matrix:r/dev:example.org');
+
+    expect(editor.doc()?.textContent).toBe('the docs');
+    const hrefs: string[] = [];
+    editor.doc()?.descendants((node) => {
+      for (const mark of node.marks) {
+        if (mark.type.name === 'link') hrefs.push(mark.attrs.href as string);
+      }
+    });
+    expect(hrefs).toEqual(['matrix:r/dev:example.org']);
   });
 
   test('an address pasted over a selection in the plain composer is written as markdown', () => {

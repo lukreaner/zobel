@@ -6,8 +6,13 @@
   import MediaImage from '#lib/ui/MediaImage.svelte';
   import { preferences } from '#lib/settings/preferences.svelte.js';
 
-  import { GIF_PLAYBACK, hasPreviewData, imageMimeFromUrl, isGifHostUrl } from './link-preview.js';
-  import { previewSources, resolveUrlPreview, usesTunnel } from './link-preview-cache';
+  import { GIF_PLAYBACK, hasPreviewData, imageMimeFromUrl, isGifPreview } from './link-preview.js';
+  import {
+    previewSources,
+    resolveUrlPreview,
+    shownLinkPreviews,
+    usesTunnel,
+  } from './link-preview-cache';
   import { findLinkPresentation } from './link-presentations';
   import { hasRoomMediaPreviews, useRoomMediaPreviews } from './room-media-previews.svelte.js';
   import { mediaViewerState } from '#lib/ui/media/media-viewer-state.svelte.js';
@@ -52,11 +57,19 @@
     };
   });
 
+  $effect(() => {
+    if (preview === null) return;
+    const key = url;
+    const view = preview;
+    shownLinkPreviews.set(key, view);
+    return () => {
+      if (shownLinkPreviews.get(key) === view) shownLinkPreviews.delete(key);
+    };
+  });
+
   let shown = $derived(preview ? [preview] : []);
   let title = $derived(preview?.title ?? preview?.site_name ?? url);
-  let gif = $derived(
-    preview?.video?.gif === true || preview?.image_mime === 'image/gif' || isGifHostUrl(url)
-  );
+  let gif = $derived(isGifPreview(url, preview));
   let compactImage = $derived(
     !gif &&
       (preview?.card === 'summary'
@@ -163,13 +176,7 @@
           onclick={openPreviewImage}
         />
       {/if}
-      <a
-        class="link-preview-text"
-        href={url}
-        target="_blank"
-        rel="external noopener noreferrer"
-        aria-label={title}
-      >
+      <a class="link-preview-text" href={url} target="_blank" rel="external noopener noreferrer">
         {#if view.site_name}<span class="link-preview-site" dir="auto">{view.site_name}</span>{/if}
         {#if view.author_name}<span class="link-preview-author">{view.author_name}</span>{/if}
         <span class="link-preview-title" dir="auto">{title}</span>
@@ -226,8 +233,12 @@
   }
 
   :global(.link-preview-image) {
+    aspect-ratio: var(--media-ratio);
+    contain: inline-size;
     display: block;
-    width: 100%;
+    margin: auto;
+    max-height: var(--timeline-media-max);
+    max-width: min(var(--timeline-media-max), 100%);
   }
 
   .link-preview-text {

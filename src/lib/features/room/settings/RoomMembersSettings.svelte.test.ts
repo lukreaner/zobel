@@ -6,6 +6,8 @@ import { expect, test, vi } from 'vitest';
 
 import { CoreError } from '#src/transport';
 import type {
+  CoreEvent,
+  InviteHistoryView,
   MemberView,
   PowerLevelTagView,
   RoomPermissionsView,
@@ -26,16 +28,32 @@ Object.assign(core.rpc.members, {
   ban: vi.fn<(params: object) => Promise<null>>(),
   unban: vi.fn<() => Promise<null>>(),
   setUserPowerLevel: vi.fn<() => Promise<null>>(),
+  syncChildPowerLevels:
+    vi.fn<
+      (params: {
+        space_id: string;
+        child_ids: string[];
+      }) => Promise<{ updated: number; skipped: number }>
+    >(),
   powerLevelTags: vi.fn<() => Promise<Record<string, PowerLevelTagView>>>(() =>
     Promise.resolve({})
   ),
 });
-Object.assign(core.rpc.rooms, { invite: vi.fn<(params: object) => Promise<null>>() });
+Object.assign(core.rpc.rooms, { invite: vi.fn<(params: object) => Promise<InviteHistoryView>>() });
 Object.assign(core.rpc.room_state, { sendEvent: vi.fn<() => Promise<string>>() });
 Object.assign(core.rpc.account, { searchUserDirectory });
 
 vi.mock('#lib/rooms/presence.svelte.js', () => ({
   usePresenceStore: () => ({ get: () => null, peek: () => null }),
+}));
+
+vi.mock('#lib/rooms/room-list.svelte.js', () => ({
+  useRoomList: () => ({
+    roomSpaces: (id: string) =>
+      id === '!space:example.org'
+        ? { descendants: [room.room_id, '!subspace:example.org'] }
+        : undefined,
+  }),
 }));
 
 import RoomMembersSettings from './RoomMembersSettings.svelte';
@@ -54,6 +72,7 @@ const alice: MemberView = {
 };
 
 const room: RoomListItemView = { room_id: '!room:example.org' } as RoomListItemView;
+const space: RoomListItemView = { ...room, room_id: '!space:example.org', room_kind: 'space' };
 
 const permissions: RoomPermissionsView = {
   own_power_level: 100,
@@ -80,6 +99,28 @@ async function renderMembers(roomPermissions: RoomPermissionsView = permissions)
 const search = () => screen.getByRole('searchbox');
 const invites = () => screen.queryByRole('region', { name: 'Invite people' });
 
+test('applies space settings to descendant rooms and subspaces only after confirmation', async () => {
+  core.rpc.members.list.mockResolvedValue([alice]);
+  core.rpc.members.syncChildPowerLevels.mockResolvedValue({ updated: 1, skipped: 1 });
+  render(RoomMembersSettings, {
+    room: space,
+    permissions: { ...permissions, can_change_power_levels: true },
+  });
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: 'Apply space settings…' }));
+  expect(core.rpc.members.syncChildPowerLevels).not.toHaveBeenCalled();
+  await user.click(
+    within(await screen.findByRole('dialog')).getByRole('button', { name: 'Apply' })
+  );
+
+  expect(await screen.findByText('Updated 1 room, 1 skipped.')).toBeInTheDocument();
+  expect(core.rpc.members.syncChildPowerLevels).toHaveBeenCalledWith({
+    space_id: space.room_id,
+    child_ids: [room.room_id, '!subspace:example.org'],
+  });
+});
+
 test('offers approval and denial for join requests', async () => {
   const requester: MemberView = { ...alice, membership: 'knock' };
   core.rpc.members.list.mockResolvedValue([requester]);
@@ -96,9 +137,31 @@ test('offers approval and denial for join requests', async () => {
   });
 });
 
+test('shows a join request as soon as the room members change', async () => {
+  const requester: MemberView = { ...alice, membership: 'knock' };
+  let emit!: (event: CoreEvent) => void;
+  core.subscribeEvents.mockImplementationOnce((listener) => {
+    emit = listener;
+    return () => {};
+  });
+  core.rpc.members.list.mockResolvedValue([]);
+  render(RoomMembersSettings, { room, permissions: { ...permissions, can_invite: true } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('radio', { name: 'Requests' }));
+  await screen.findByText('No pending join requests.');
+  const loads = core.rpc.members.list.mock.calls.length;
+
+  core.rpc.members.list.mockResolvedValue([requester]);
+  emit({ type: 'members_changed', room_id: '!other:example.org', member: requester });
+  expect(core.rpc.members.list).toHaveBeenCalledTimes(loads);
+  emit({ type: 'members_changed', room_id: room.room_id, member: requester });
+
+  expect(await screen.findByText('Alice')).toBeInTheDocument();
+});
+
 test.each(['Approve', 'Deny'])('answers a join request with %s', async (action) => {
   core.rpc.members.list.mockResolvedValue([{ ...alice, membership: 'knock' }]);
-  core.rpc.rooms.invite.mockResolvedValue(null);
+  core.rpc.rooms.invite.mockResolvedValue('not_shared');
   core.rpc.members.kick.mockResolvedValue(0);
   render(RoomMembersSettings, { room, permissions: { ...permissions, can_invite: true } });
   const user = userEvent.setup();
@@ -185,7 +248,7 @@ test('searches the directory and invites from the members list', async () => {
       },
     ],
   });
-  core.rpc.rooms.invite.mockResolvedValue(null);
+  core.rpc.rooms.invite.mockResolvedValue('not_shared');
   const user = await renderMembers({ ...permissions, can_invite: true });
 
   await user.type(search(), 'bo');
@@ -315,6 +378,33 @@ test('offers no role above your own and asks before lowering your own', async ()
       room_id: '!room:example.org',
       user_id: '@me:example.org',
       power_level: 0,
+    });
+  });
+  core.session = null;
+});
+
+test('asks before giving someone a role equal to your own', async () => {
+  core.session = { user_id: '@me:example.org' };
+  core.rpc.members.list.mockResolvedValue([alice]);
+  core.rpc.members.setUserPowerLevel.mockReset().mockResolvedValue(null);
+  const user = await renderMembers({
+    ...permissions,
+    own_power_level: 50,
+    can_change_power_levels: true,
+  });
+
+  await user.click(screen.getByRole('combobox', { name: 'Change role' }));
+  await user.click(await screen.findByRole('option', { name: /Moderator/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Give Alice your own role?' });
+  expect(within(dialog).getByText(/@alice:example\.org/)).toBeInTheDocument();
+  expect(core.rpc.members.setUserPowerLevel).not.toHaveBeenCalled();
+
+  await user.click(within(dialog).getByRole('button', { name: 'Give role' }));
+  await vi.waitFor(() => {
+    expect(core.rpc.members.setUserPowerLevel).toHaveBeenCalledWith({
+      room_id: '!room:example.org',
+      user_id: alice.user_id,
+      power_level: 50,
     });
   });
   core.session = null;

@@ -22,21 +22,24 @@
   import ResponsiveDialog from '#lib/ui/primitives/ResponsiveDialog.svelte';
   import Spinner from '#lib/ui/primitives/Spinner.svelte';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
-  import '#lib/ui/primitives/menu.css';
-  import { scrollHint } from '#lib/ui/scroll-hint.js';
+  import { isComposingKey } from '#lib/ui/shortcuts/binding.js';
 
   import { UserDirectoryLookup } from '../members/user-directory-lookup.svelte.js';
+  import UserSuggestionList from '../members/UserSuggestionList.svelte';
+  import '#lib/ui/primitives/dialog-body.css';
 
   const core = useCoreClient();
   const roomList = useRoomList();
   const directory = new UserDirectoryLookup(core);
   const inputId = $props.id();
+  const listId = `${inputId}-people`;
 
   let value = $state('');
   let preview = $state<RoomPreviewView | null>(null);
   let previewing = $state(false);
   let busy = $state(false);
   let failed = $state<string | null>(null);
+  let suggestionList = $state<UserSuggestionList>();
 
   let room = $derived(parseJoinAddress(value) ?? null);
   let roomKey = $derived(room ? JSON.stringify([room.address, room.via]) : null);
@@ -54,6 +57,7 @@
     };
     return [typed, ...directory.results];
   });
+  let listed = $derived(!room && people.length > 0);
   let knock = $derived(preview?.join_rule === 'knock' || preview?.join_rule === 'knock_restricted');
   let joined = $derived(preview?.state === 'joined');
   let actionLabel = $derived(
@@ -150,6 +154,7 @@
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    if (isComposingKey(event) || suggestionList?.handleKey(event)) return;
     if (event.key !== 'Enter') return;
     event.preventDefault();
     if (room) void enterRoom();
@@ -162,104 +167,104 @@
   label={i18n.t('nav.findOrJoin')}
   closeLabel={i18n.t('common.close')}
 >
-  <div class="find-or-join">
-    <h2>{i18n.t('nav.findOrJoin')}</h2>
+  {#snippet children(desktop)}
+    <div class={['dialog-body', 'find-or-join', { sheet: !desktop }]}>
+      <h2>{i18n.t('nav.findOrJoin')}</h2>
 
-    <TextInput
-      id={inputId}
-      bind:value
-      onkeydown={onKeydown}
-      aria-label={i18n.t('nav.findOrJoin')}
-      placeholder={i18n.t('findOrJoin.placeholder')}
-      autocomplete="off"
-      autocapitalize="none"
-      spellcheck={false}
-    />
+      <TextInput
+        id={inputId}
+        bind:value
+        onkeydown={onKeydown}
+        role="combobox"
+        aria-expanded={listed}
+        aria-controls={listed ? listId : undefined}
+        aria-activedescendant={suggestionList?.activeOptionId()}
+        aria-autocomplete="list"
+        aria-label={i18n.t('nav.findOrJoin')}
+        placeholder={i18n.t('findOrJoin.placeholder')}
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck={false}
+      />
 
-    {#if room}
-      <div class="room">
-        {#if previewing}
-          <div class="pending" role="status"><Spinner /></div>
-        {:else if preview}
-          {@const name = preview.name ?? preview.canonical_alias ?? room.address}
-          <Avatar id={preview.room_id} src={preview.avatar_url} {name} />
-          <div class="identity">
-            <span class="name">{name}</span>
-            {#if preview.canonical_alias}<span class="detail">{preview.canonical_alias}</span>{/if}
-            {#if preview.num_joined_members != null}
-              <span class="detail">
-                {i18n.t('join.members', { count: preview.num_joined_members })}
-              </span>
-            {/if}
-            {#if preview.topic}<span class="topic">{preview.topic}</span>{/if}
-          </div>
-        {:else}
-          <p class="note">{i18n.t('findOrJoin.previewUnavailable', { address: room.address })}</p>
-        {/if}
-      </div>
-    {:else if people.length > 0}
-      <ul class="people" aria-label={i18n.t('findOrJoin.people')} {@attach scrollHint}>
-        {#each people as entry (entry.user_id)}
-          {@const name = entry.display_name ?? entry.user_id}
-          <li>
-            <button
-              type="button"
-              class="menu-item"
-              disabled={busy}
-              onclick={() => {
-                void message(entry.user_id);
-              }}
-            >
-              <Avatar size="small" id={entry.user_id} src={entry.avatar_url} {name} />
-              <span class="identity">
-                <span class="name">{name}</span>
-                <span class="detail">{entry.user_id}</span>
-              </span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {:else if term !== '' && !directory.searching}
-      <p class="note">{i18n.t('findOrJoin.noPeople')}</p>
-    {:else if term === ''}
-      <p class="note">{i18n.t('findOrJoin.hint')}</p>
-    {/if}
-
-    {#if failed}
-      <Alert variant="critical" role="alert">{failed}</Alert>
-    {/if}
-
-    <footer>
-      <Button
-        variant="ghost"
-        size="small"
-        onclick={() => {
-          void leaveTo(resolve('explore'));
-        }}
-      >
-        {i18n.t('findOrJoin.explore')}
-      </Button>
       {#if room}
+        <div class="room">
+          {#if previewing}
+            <div class="pending" role="status"><Spinner /></div>
+          {:else if preview}
+            {@const name = preview.name ?? preview.canonical_alias ?? room.address}
+            <Avatar id={preview.room_id} src={preview.avatar_url} {name} />
+            <div class="identity">
+              <span class="name">{name}</span>
+              {#if preview.canonical_alias}<span class="detail">{preview.canonical_alias}</span
+                >{/if}
+              {#if preview.num_joined_members != null}
+                <span class="detail">
+                  {i18n.t('join.members', { count: preview.num_joined_members })}
+                </span>
+              {/if}
+              {#if preview.topic}<span class="topic">{preview.topic}</span>{/if}
+            </div>
+          {:else}
+            <p class="note">{i18n.t('findOrJoin.previewUnavailable', { address: room.address })}</p>
+          {/if}
+        </div>
+      {:else if people.length > 0}
+        <UserSuggestionList
+          bind:this={suggestionList}
+          id={listId}
+          entries={people}
+          disabled={busy}
+          onSelect={(userId) => {
+            void message(userId);
+          }}
+        />
+      {:else if term !== '' && !directory.searching}
+        <p class="note">{i18n.t('findOrJoin.noPeople')}</p>
+      {:else if term === ''}
+        <p class="note">{i18n.t('findOrJoin.hint')}</p>
+      {/if}
+
+      {#if failed}
+        <Alert variant="critical" role="alert">{failed}</Alert>
+      {/if}
+
+      <footer>
         <Button
-          variant="primary"
-          loading={busy}
-          disabled={previewing}
+          variant="ghost"
+          size="small"
           onclick={() => {
-            void enterRoom();
+            void leaveTo(resolve('explore'));
           }}
         >
-          {actionLabel}
+          {i18n.t('findOrJoin.explore')}
         </Button>
-      {/if}
-    </footer>
-  </div>
+        {#if room}
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={previewing}
+            onclick={() => {
+              void enterRoom();
+            }}
+          >
+            {actionLabel}
+          </Button>
+        {/if}
+      </footer>
+    </div>
+  {/snippet}
 </ResponsiveDialog>
 
 <style>
   .find-or-join {
-    display: grid;
     gap: var(--space-400);
     width: min(26rem, calc(100vw - 2rem));
+  }
+
+  .find-or-join.sheet {
+    padding: 0 var(--space-400);
+    width: auto;
   }
 
   h2 {
@@ -307,20 +312,6 @@
 
   .note {
     margin: 0;
-  }
-
-  .people {
-    display: grid;
-    list-style: none;
-    margin: 0;
-    max-height: 16rem;
-    overflow: auto;
-    padding: 0;
-  }
-
-  .people :global(.menu-item) {
-    --menu-item-height: var(--control-height-500);
-    --menu-item-gap: var(--space-200);
   }
 
   footer {

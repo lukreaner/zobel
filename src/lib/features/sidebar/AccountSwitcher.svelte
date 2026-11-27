@@ -6,7 +6,10 @@
   import type { SessionInfo } from '#src/generated/protocol';
   import { runtimeConfig } from '#lib/config/runtime-config.js';
   import { useCoreClient } from '#lib/core/context.js';
-  import { defaultSettingsSection } from '#lib/features/settings/settings-navigation.js';
+  import {
+    defaultSettingsSection,
+    settingsState,
+  } from '#lib/features/settings/settings-navigation.js';
   import { pushOverride } from '#lib/notifications/push-config.js';
   import { logoutWithPush } from '#lib/features/notifications/web-push.js';
   import { i18n } from '#lib/i18n.js';
@@ -23,6 +26,7 @@
   import { resolveUserStatus } from '#lib/rooms/user-status.js';
   import ProfileCard from '#lib/ui/primitives/ProfileCard.svelte';
   import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
+  import { toasts } from '#lib/ui/toasts.svelte.js';
   import AccountMenuItems from './AccountMenuItems.svelte';
   import { AccountDirectory } from './account-directory.svelte.js';
   import { SignOutGuard } from './sign-out-guard.svelte.js';
@@ -70,6 +74,9 @@
     try {
       await core.switchAccount(accountId);
       await goto(resolve('/(app)/rooms'));
+    } catch (cause) {
+      console.warn('[sable nav] switching account failed', cause);
+      toasts.error(i18n.t('nav.switchAccountFailed'));
     } finally {
       switching = false;
     }
@@ -94,7 +101,7 @@
       return;
     }
 
-    void goto(resolve(`settings/${section}`), { shallow: true, state: { settings: { section } } });
+    void goto(resolve(`settings/${section}`), { shallow: true, state: settingsState(section) });
   }
 
   function linkDevice(): void {
@@ -134,7 +141,7 @@
   function openStatusEdit(): void {
     void goto(resolve('settings/account?editStatus'), {
       shallow: true,
-      state: { settings: { section: 'account' } },
+      state: settingsState('account'),
     });
   }
 </script>

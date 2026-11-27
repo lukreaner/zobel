@@ -8,16 +8,14 @@ import type { CoreEvent } from '#src/generated/protocol';
 
 vi.mock('#lib/core/context.js');
 
-const { saveBytes, shareLink } = vi.hoisted(() => ({
+const { saveBytes } = vi.hoisted(() => ({
   saveBytes: vi.fn(() => Promise.resolve('saved' as const)),
-  shareLink: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#lib/platform/files.js', async () => ({
   ...(await vi.importActual<typeof import('#lib/platform/files.js')>('#lib/platform/files.js')),
   saveBytes,
   sharesLinks: () => true,
-  shareLink,
 }));
 
 vi.mock('#lib/rooms/room-list.svelte.js', () => ({
@@ -301,7 +299,7 @@ test('opens message actions on right click', async () => {
   await tick();
 
   expect(menuLabels()).toContain('Reply');
-  expect(menuLabels()).toContain('Copy link to message');
+  expect(menuLabels()).toContain('Copy external link');
 });
 
 test('picking a quick reaction from the context menu closes it', async () => {
@@ -340,7 +338,7 @@ test('copies a message link when it is right-clicked', async () => {
   await tick();
 
   await openMenu(screen.getByRole('link', { name: 'Link' }));
-  await press(menuItem('Copy link'));
+  await press(menuItem('Copy URL'));
 
   expect(writeText).toHaveBeenCalledWith('https://example.org/');
 });
@@ -457,33 +455,6 @@ test('long pressing a reaction opens its people list without toggling it', async
   vi.useRealTimers();
 });
 
-test('long pressing a link offers to copy or share it', async () => {
-  const linked = item(false);
-  if (linked.content.kind !== 'message') throw new Error('expected a message');
-  linked.content.html = '<a href="https://example.org">Link</a>';
-  vi.useFakeTimers();
-  const instance = render(TimelineItemHarness, {
-    props: { core, item: { item: linked, collapsed: false, onReply: vi.fn() } },
-  });
-  await tick();
-
-  screen
-    .getByRole('link', { name: 'Link' })
-    .dispatchEvent(
-      new PointerEvent('pointerdown', { pointerType: 'touch', isPrimary: true, bubbles: true })
-    );
-  await vi.advanceTimersByTimeAsync(LONG_PRESS_MS);
-  window.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'touch', isPrimary: true }));
-  await vi.advanceTimersByTimeAsync(1000);
-  vi.useRealTimers();
-
-  expect(screen.getByRole('button', { name: /Copy link address/ })).not.toBeNull();
-  await press(screen.getByRole('button', { name: /Share link/ }));
-
-  expect(shareLink).toHaveBeenCalledWith('https://example.org/');
-  instance.unmount();
-});
-
 test('a touch long press opens the sheet without also opening the context menu', async () => {
   vi.useFakeTimers();
   const instance = render(TimelineItemHarness, {
@@ -535,6 +506,25 @@ test('a touch context menu the row never saw pressed opens the sheet', async () 
   expect(native.defaultPrevented).toBe(true);
   expect(document.querySelectorAll('[data-context-menu-content]')).toHaveLength(0);
   expect(document.querySelector('[data-dialog-content]')).not.toBeNull();
+});
+
+test('a touch context menu on a Matrix link shows its actual destination', async () => {
+  const linked = item(false);
+  if (linked.content.kind !== 'message') throw new Error('expected a message');
+  linked.content.html = '<a href="matrix:r/elsewhere:example.org"><strong>General</strong></a>';
+  render(TimelineItemHarness, {
+    props: { core, item: { item: linked, collapsed: false, onReply: vi.fn() } },
+  });
+  await tick();
+
+  screen
+    .getByText('General')
+    .dispatchEvent(
+      new PointerEvent('contextmenu', { pointerType: 'touch', bubbles: true, cancelable: true })
+    );
+  await tick();
+
+  expect(screen.getByRole('dialog')).toHaveTextContent('Link destination: #elsewhere:example.org');
 });
 
 test('offers to add a message inline emote to your own pack', async () => {

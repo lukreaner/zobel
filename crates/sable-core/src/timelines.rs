@@ -24,10 +24,11 @@ use matrix_sdk_base::event_cache::Event;
 use matrix_sdk_common::serde_helpers::{extract_relation, extract_thread_root};
 
 use crate::ResultExt;
+use crate::SignedIn;
 use crate::protocol::{RpcCode, RpcError, SubscriptionId, TimelineItemView};
-use crate::view::{CUTE_EVENT_MSGTYPE, aggregation_item};
+use crate::view::aggregation_item;
 
-use crate::{CachedTimeline, Core, SubscriptionKind, ThreadKey};
+use crate::{CachedTimeline, SubscriptionKind, ThreadKey};
 
 const MAX_CACHED_INACTIVE_TIMELINES: usize = 4;
 pub(crate) const MAX_CACHED_THREAD_TIMELINES: usize = 4;
@@ -135,45 +136,11 @@ pub(crate) async fn thread_root_of<Found: Future<Output = Option<Event>>>(
     None
 }
 
-impl Core {
-    /// A build can outlast the session it started under, so it must not hold the session while it
-    /// runs: one slow room would block every other open and the teardown.
-    fn session_room(
-        &self,
-        room_id: &OwnedRoomId,
-    ) -> Result<(Room, Arc<matrix_sdk_ui::sync_service::SyncService>), RpcError> {
-        self.session
-            .current(|session| {
-                Some((
-                    session.client.get_room(room_id)?,
-                    session.sync_service.clone(),
-                ))
-            })
-            .ok_or(RpcCode::NotLoggedIn)?
-            .ok_or_else(|| RpcCode::UnknownRoom.into())
-    }
-
-    /// Holding the guard keeps the session from ending while a finished build is cached, so a
-    /// teardown never leaves a timeline of the old client in the next session's cache.
-    async fn session_of(
-        &self,
-        sync_service: &Arc<matrix_sdk_ui::sync_service::SyncService>,
-    ) -> Result<tokio::sync::RwLockReadGuard<'_, Option<crate::session::Session>>, RpcError> {
-        let session = self.session.read().await;
-        match session.as_ref() {
-            Some(current) if Arc::ptr_eq(&current.sync_service, sync_service) => Ok(session),
-            _ => Err(RpcCode::NotLoggedIn.into()),
-        }
-    }
-
+impl SignedIn {
     /// Cached: a second subscriber would give the UI two streams for one room.
     pub(crate) async fn timeline(&self, room_id: &OwnedRoomId) -> Result<Arc<Timeline>, RpcError> {
-        {
-            let session = self.session.read().await;
-            session.as_ref().ok_or(RpcCode::NotLoggedIn)?;
-            if let Some(cached) = self.timelines.lock().await.get(room_id) {
-                return Ok(cached.timeline.clone());
-            }
+        if let Some(cached) = self.state().timelines.lock().get(room_id) {
+            return Ok(cached.timeline.clone());
         }
         self.live_timeline(room_id, false).await
     }
@@ -192,9 +159,10 @@ impl Core {
         room_id: &OwnedRoomId,
         hidden_events: bool,
     ) -> Result<Arc<Timeline>, RpcError> {
-        let (room, sync_service) = self.session_room(room_id)?;
+        let room = self.room(room_id)?;
         {
-            let mut timelines = self.timelines.lock().await;
+            let session_state = self.state();
+            let mut timelines = session_state.timelines.lock();
             if let Some(cached) = timelines.get(room_id)
                 && cached.hidden_events == hidden_events
             {
@@ -208,22 +176,25 @@ impl Core {
         let timeline = Arc::new(
             build_room_timeline(&room, &TimelineFocusView::Live, hidden_events)
                 .await
-                .or_failed(self, "build_timeline")?,
+                .or_failed(self.core(), "build_timeline")?,
         );
         tracing::info!(%room_id, "live_timeline: built");
 
-        let _session = self.session_of(&sync_service).await?;
         let subscribed_room_ids = self
+            .state()
             .subscriptions
             .lock()
-            .await
             .values()
             .filter_map(|subscription| match &subscription.kind {
                 SubscriptionKind::LiveTimeline(room_id) => Some(room_id.clone()),
                 SubscriptionKind::Other | SubscriptionKind::FocusedTimeline(_) => None,
             })
             .collect::<std::collections::HashSet<_>>();
-        let mut timelines = self.timelines.lock().await;
+        let session_state = self.state();
+        let mut timelines = session_state.timelines.lock();
+        if self.has_ended() {
+            return Err(RpcCode::NotLoggedIn.into());
+        }
         match timelines.get(room_id) {
             Some(cached) if cached.hidden_events == hidden_events => {
                 let timeline = cached.timeline.clone();
@@ -256,20 +227,20 @@ impl Core {
     }
 }
 
-impl Core {
+impl SignedIn {
     /// The redecryptor misses keys a push client stored while the app was in the background.
     pub(crate) async fn retry_cached_decryption(&self) {
         let mut timelines: Vec<Arc<Timeline>> = self
+            .state()
             .timelines
             .lock()
-            .await
             .values()
             .map(|cached| cached.timeline.clone())
             .collect();
         timelines.extend(
-            self.thread_timelines
+            self.state()
+                .thread_timelines
                 .lock()
-                .await
                 .iter()
                 .map(|(_, cached)| cached.timeline.clone()),
         );
@@ -315,9 +286,9 @@ impl Core {
             return self.timeline_for(room_id, thread_root).await;
         };
         let (timeline, subscribed_root) = self
+            .state()
             .subscriptions
             .lock()
-            .await
             .get(&subscription)
             .and_then(|subscription| {
                 subscription
@@ -368,10 +339,11 @@ impl Core {
         room_id: &OwnedRoomId,
         root_event_id: &OwnedEventId,
     ) -> Result<Arc<Timeline>, RpcError> {
-        let (room, sync_service) = self.session_room(room_id)?;
+        let room = self.room(room_id)?;
         let key: ThreadKey = (room_id.clone(), root_event_id.clone());
         {
-            let mut threads = self.thread_timelines.lock().await;
+            let session_state = self.state();
+            let mut threads = session_state.thread_timelines.lock();
             if let Some(cached) = threads.get_mut(&key) {
                 return Ok(cached.timeline.clone());
             }
@@ -383,11 +355,14 @@ impl Core {
         let timeline = Arc::new(
             build_room_timeline(&room, &focus, false)
                 .await
-                .or_failed(self, "build_thread_timeline")?,
+                .or_failed(self.core(), "build_thread_timeline")?,
         );
 
-        let _session = self.session_of(&sync_service).await?;
-        let mut threads = self.thread_timelines.lock().await;
+        let session_state = self.state();
+        let mut threads = session_state.thread_timelines.lock();
+        if self.has_ended() {
+            return Err(RpcCode::NotLoggedIn.into());
+        }
         if let Some(cached) = threads.get_mut(&key) {
             return Ok(cached.timeline.clone());
         }
@@ -403,7 +378,9 @@ impl Core {
     }
 }
 
-pub(crate) fn fill_sender_profiles(room: &matrix_sdk::Room, timeline: &Arc<Timeline>) {
+/// Every timeline asks, since the fetch only fills the profiles of the timeline it is called on.
+/// The SDK shares one request between the timelines of a room.
+pub(crate) fn fill_sender_profiles(room: &Room, timeline: &Arc<Timeline>) {
     if room.are_members_synced() {
         return;
     }
@@ -475,17 +452,16 @@ pub(crate) fn aggregation_items(
 }
 
 fn timeline_event_filter(event: &AnySyncTimelineEvent, rules: &RoomVersionRules) -> bool {
-    !is_signaling_event(event) && (default_event_filter(event, rules) || is_cute_event(event))
+    !is_signaling_event(event) && (default_event_filter(event, rules) || is_original_message(event))
 }
 
-fn is_cute_event(event: &AnySyncTimelineEvent) -> bool {
+fn is_original_message(event: &AnySyncTimelineEvent) -> bool {
     let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(message)) = event
     else {
         return false;
     };
     message.as_original().is_some_and(|message| {
-        message.content.msgtype.msgtype() == CUTE_EVENT_MSGTYPE
-            && !matches!(message.content.relates_to, Some(Relation::Replacement(_)))
+        !matches!(message.content.relates_to, Some(Relation::Replacement(_)))
     })
 }
 
@@ -502,7 +478,7 @@ fn is_signaling_event(event: &AnySyncTimelineEvent) -> bool {
 }
 
 pub(crate) async fn build_room_timeline(
-    room: &matrix_sdk::Room,
+    room: &Room,
     focus: &TimelineFocusView,
     hidden_events: bool,
 ) -> Result<Timeline, matrix_sdk_ui::timeline::Error> {
@@ -574,7 +550,7 @@ mod tests {
 
     #[test]
     fn signaling_events_are_filtered_unless_hidden_events_are_on() {
-        let rules = matrix_sdk::ruma::room_version_rules::RoomVersionRules::V11;
+        let rules = ruma::room_version_rules::RoomVersionRules::V11;
         let event_json = [
             ("m.rtc.member", "{}", true),
             ("org.matrix.msc4143.rtc.member", "{}", true),
@@ -596,7 +572,7 @@ mod tests {
             } else {
                 ""
             };
-            let event = Raw::<matrix_sdk::ruma::events::AnySyncTimelineEvent>::from_json_string(
+            let event = Raw::<ruma::events::AnySyncTimelineEvent>::from_json_string(
                 format!(
                     r#"{{"type":"{event_type}","event_id":"$signal","sender":"@alice:example.org","origin_server_ts":1,"content":{content},"unsigned":{{}}{state_key}}}"#
                 ),
@@ -609,7 +585,7 @@ mod tests {
             assert_eq!(super::hidden_event_filter(&event, &rules), hidden);
         }
 
-        let ordinary = Raw::<matrix_sdk::ruma::events::AnySyncTimelineEvent>::from_json_string(
+        let ordinary = Raw::<ruma::events::AnySyncTimelineEvent>::from_json_string(
             r#"{"type":"com.example.signal","event_id":"$ordinary","sender":"@alice:example.org","origin_server_ts":1,"content":{},"unsigned":{}}"#.to_owned(),
         )
         .unwrap()
@@ -620,10 +596,10 @@ mod tests {
     }
 
     #[test]
-    fn fluffychat_cute_events_reach_the_timeline() {
-        let rules = matrix_sdk::ruma::room_version_rules::RoomVersionRules::V11;
+    fn custom_msgtypes_reach_the_timeline() {
+        let rules = ruma::room_version_rules::RoomVersionRules::V11;
         let event = |content: &str| {
-            Raw::<matrix_sdk::ruma::events::AnySyncTimelineEvent>::from_json_string(format!(
+            Raw::<ruma::events::AnySyncTimelineEvent>::from_json_string(format!(
                 r#"{{"type":"m.room.message","event_id":"$cute","sender":"@alice:example.org","origin_server_ts":1,"content":{content},"unsigned":{{}}}}"#
             ))
             .unwrap()
@@ -635,21 +611,27 @@ mod tests {
         assert!(super::timeline_event_filter(&hug, &rules));
 
         let other = event(r#"{"msgtype":"com.example.custom","body":"x"}"#);
-        assert!(!super::timeline_event_filter(&other, &rules));
+        assert!(super::timeline_event_filter(&other, &rules));
+
+        let effect = event(r#"{"msgtype":"nic.custom.confetti","body":"hi"}"#);
+        assert!(super::timeline_event_filter(&effect, &rules));
+
+        let edit = event(
+            r#"{"msgtype":"com.example.custom","body":"* x","m.new_content":{"msgtype":"com.example.custom","body":"x"},"m.relates_to":{"rel_type":"m.replace","event_id":"$a"}}"#,
+        );
+        assert!(!super::timeline_event_filter(&edit, &rules));
     }
 
     #[test]
     fn aggregations_become_hidden_rows() {
         use matrix_sdk_base::deserialized_responses::TimelineEvent;
 
-        let rules = matrix_sdk::ruma::room_version_rules::RoomVersionRules::V11;
+        let rules = ruma::room_version_rules::RoomVersionRules::V11;
         let event = |json: &str| {
             TimelineEvent::from_plaintext(
-                Raw::<matrix_sdk::ruma::events::AnySyncTimelineEvent>::from_json_string(
-                    json.to_owned(),
-                )
-                .unwrap()
-                .cast_unchecked(),
+                Raw::<ruma::events::AnySyncTimelineEvent>::from_json_string(json.to_owned())
+                    .unwrap()
+                    .cast_unchecked(),
             )
         };
         let reaction = event(
@@ -672,11 +654,9 @@ mod tests {
 
     fn cached(json: &str) -> matrix_sdk_base::event_cache::Event {
         matrix_sdk_base::deserialized_responses::TimelineEvent::from_plaintext(
-            Raw::<matrix_sdk::ruma::events::AnySyncTimelineEvent>::from_json_string(
-                json.to_owned(),
-            )
-            .unwrap()
-            .cast_unchecked(),
+            Raw::<ruma::events::AnySyncTimelineEvent>::from_json_string(json.to_owned())
+                .unwrap()
+                .cast_unchecked(),
         )
     }
 
@@ -692,7 +672,7 @@ mod tests {
 
     async fn kept_ids(scope: &super::AggregationScope) -> Vec<String> {
         let known = [REPLY, ROOT, MAIN].map(cached);
-        let lookup = |id: matrix_sdk::ruma::OwnedEventId| {
+        let lookup = |id: ruma::OwnedEventId| {
             let found = known
                 .iter()
                 .find(|event| event.event_id() == Some(&*id))
@@ -733,7 +713,7 @@ mod tests {
     #[tokio::test]
     async fn an_unrelated_thread_keeps_none() {
         let scope = super::AggregationScope::Thread(event_id!("$other").to_owned());
-        assert_eq!(kept_ids(&scope).await, [] as [String; 0]);
+        assert_eq!(kept_ids(&scope).await, Vec::<String>::new());
     }
 
     #[tokio::test]

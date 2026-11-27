@@ -15,7 +15,6 @@ pub(super) struct StickySync {
     conn_id: String,
     include_invite_state: bool,
     pos: Option<String>,
-    since: Option<String>,
     pending: Vec<(Value, u64)>,
 }
 
@@ -41,6 +40,12 @@ fn authenticated_device(info: Option<&EncryptionInfo>, value: &Value) -> Option<
     if value.get("sender")?.as_str()? != info.sender.as_str() {
         return None;
     }
+    trusted_sender_device(info)
+}
+
+/// The sender device, unless the SDK found a verification violation, a mismatched sender or no
+/// device to link the event to. A device its owner never signed is still accepted.
+pub(super) fn trusted_sender_device(info: &EncryptionInfo) -> Option<OwnedDeviceId> {
     match &info.verification_state {
         VerificationState::Verified
         | VerificationState::Unverified(
@@ -81,7 +86,6 @@ impl StickySync {
             conn_id: format!("call-{session}"),
             include_invite_state: false,
             pos: None,
-            since: None,
             pending: Vec::new(),
         }
     }
@@ -91,7 +95,6 @@ impl StickySync {
             conn_id: format!("call-invites-{}", ruma::TransactionId::new()),
             include_invite_state: true,
             pos: None,
-            since: None,
             pending: Vec::new(),
         }
     }
@@ -121,13 +124,8 @@ impl StickySync {
         request
             .room_subscriptions
             .insert(room.room_id().to_owned(), subscription);
-        request.extensions.to_device.enabled = Some(false);
+        request.extensions.to_device.enabled = false;
         request.extensions.sticky_events.enabled = Some(true);
-        request
-            .extensions
-            .sticky_events
-            .since
-            .clone_from(&self.since);
         request
     }
 
@@ -140,15 +138,11 @@ impl StickySync {
             Ok(response) => response,
             Err(error) => {
                 self.pos = None;
-                self.since = None;
                 return Err(error);
             }
         };
         let sticky = response.extensions.sticky_events;
         self.pos = Some(response.pos);
-        if sticky.next_batch.is_some() {
-            self.since = sticky.next_batch;
-        }
         let mut events: Vec<Value> = Vec::new();
         if let Some(room_events) = sticky.rooms.get(room.room_id()) {
             events.extend(
@@ -389,7 +383,7 @@ pub(super) async fn send(
     _client: &Client,
     room: &Room,
     content: impl serde::Serialize,
-) -> Result<ruma::OwnedEventId, matrix_sdk::Error> {
+) -> Result<OwnedEventId, matrix_sdk::Error> {
     send_wire(room, content, super::membership::RtcWire::Deployed).await
 }
 
@@ -397,7 +391,7 @@ pub(super) async fn send_wire(
     room: &Room,
     content: impl serde::Serialize,
     wire: super::membership::RtcWire,
-) -> Result<ruma::OwnedEventId, matrix_sdk::Error> {
+) -> Result<OwnedEventId, matrix_sdk::Error> {
     let content = serde_json::to_value(content)?;
     match room.latest_encryption_state().await? {
         matrix_sdk::EncryptionState::NotEncrypted => {}

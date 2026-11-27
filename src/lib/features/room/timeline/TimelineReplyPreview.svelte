@@ -10,12 +10,16 @@
   } from '#src/generated/protocol';
 
   import { i18n } from '#lib/i18n.js';
-  import { useRoomCosmetics } from '#lib/rooms/room-cosmetics.svelte.js';
   import { preferences } from '#lib/settings/preferences.svelte.js';
-  import { findMember, senderDisplayColors, stripReplyFallback } from '../members/members.js';
+  import {
+    hasRoomMediaPreviews,
+    useRoomMediaPreviews,
+  } from '../media/room-media-previews.svelte.js';
+  import { findMember, stripReplyFallback, useSenderColors } from '../members/members.js';
   import SenderName from '../members/SenderName.svelte';
-  import { hasSenderRoles, useSenderRoles } from '../members/sender-roles.js';
   import { replyText } from '../messages/reply-fallback.js';
+  import PreviewSegments from '../messages/PreviewSegments.svelte';
+  import { previewSegments } from '../messages/reply-preview.js';
   import { stateEventText } from './state-event-text';
 
   interface Props {
@@ -32,11 +36,12 @@
   let { reply, target, sender, persona, profile, currentUserId, members, onJumpToEvent }: Props =
     $props();
 
-  const roomCosmetics = useRoomCosmetics();
-  const senderRoles = hasSenderRoles() ? useSenderRoles() : null;
+  const senderColors = useSenderColors();
+  const roomMedia = hasRoomMediaPreviews() ? useRoomMediaPreviews() : null;
 
   let roomName = $derived.by(() => {
     const member = findMember(members, sender);
+    // eslint-disable-next-line no-restricted-properties -- before the profile name
     return member ? member.display_name : (reply.sender_name ?? target?.sender_name ?? null);
   });
   let nameBase = $derived(
@@ -45,7 +50,7 @@
   let name = $derived(
     reply.sender_mentioned && !nameBase.startsWith('@') ? `@${nameBase}` : nameBase
   );
-  let body = $derived.by(() => {
+  let segments = $derived.by(() => {
     const kind = target?.content.kind;
     if (
       target &&
@@ -54,27 +59,23 @@
         kind === 'state_event' ||
         kind === 'hidden_event')
     ) {
-      return stateEventText(target, i18n.t);
+      return [stateEventText(target, i18n.t)];
     }
-    return stripReplyFallback(replyText(reply, i18n.t), persona);
+    const text = stripReplyFallback(replyText(reply, i18n.t), persona);
+    return previewSegments(text, roomMedia?.hidden ? [] : reply.emotes);
   });
-  let cosmetics = $derived(persona ? null : (roomCosmetics?.for(reply.sender) ?? null));
   let colors = $derived(
-    senderDisplayColors(
-      sender ?? '',
-      profile,
+    senderColors(sender, profile, {
       persona,
-      currentUserId !== null && sender === currentUserId,
-      cosmetics,
-      sender ? (senderRoles?.(sender)?.color ?? null) : null
-    )
+      isOwn: currentUserId !== null && sender === currentUserId,
+    })
   );
 </script>
 
 {#snippet copy()}
   <span class="reply-copy"
     ><SenderName displayName={name} {colors} nameClass="reply-name" compact />
-    <span class="reply-body" dir="auto">{body}</span></span
+    <span class="reply-body" dir="auto"><PreviewSegments {segments} /></span></span
   >
 {/snippet}
 
@@ -221,12 +222,13 @@
     white-space: normal;
   }
 
-  .reply-expanded .reply-copy > span {
+  .reply-expanded .reply-body {
     -webkit-box-orient: vertical;
     display: -webkit-box;
-    -webkit-line-clamp: 6;
-    line-clamp: 6;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
     overflow: hidden;
+    white-space: pre-wrap;
   }
 
   .reply-preview:is(:hover, :focus-visible) .reply-body {

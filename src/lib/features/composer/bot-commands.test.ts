@@ -1,12 +1,18 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
   buildInvocation,
   draftsFromText,
   matchBotCommand,
   parseBotCommand,
+  prefillDrafts,
   type BotCommand,
 } from './bot-commands';
+
+vi.mock('#lib/platform/diagnostics.js', () => ({
+  describePlatform: () => Promise.resolve('macOS 15'),
+  issuePlatform: () => Promise.resolve('macOS'),
+}));
 
 const BOT = '@bot:example.org';
 
@@ -116,12 +122,17 @@ describe('matchBotCommand', () => {
 
 describe('buildInvocation', () => {
   test('coerces typed input and sends the bot a structured command', () => {
-    const result = buildInvocation(command(), {
-      target_room: 'https://matrix.to/#/!room:example.org?via=second.example.org',
-      timeout_seconds: '42',
-      apply_to_policy: true,
-      target_users: ['@alice:example.org', 'https://matrix.to/#/@bob:example.org'],
-    });
+    const result = buildInvocation(
+      command(),
+      {
+        target_room: 'https://matrix.to/#/!room:example.org?via=second.example.org',
+        timeout_seconds: '42',
+        apply_to_policy: true,
+        target_users: ['@alice:example.org', 'https://matrix.to/#/@bob:example.org'],
+      },
+      '/',
+      'matrix.to'
+    );
 
     expect(result).toEqual({
       kind: 'built',
@@ -143,16 +154,21 @@ describe('buildInvocation', () => {
       command: 'users create',
       parameters: [{ key: 'username', schema: { schema_type: 'primitive', type: 'string' } }],
     });
-    const result = buildInvocation(say, { username: 'bob' }, '!admin ');
+    const result = buildInvocation(say, { username: 'bob' }, '!admin ', 'matrix.to');
     expect(result.kind === 'built' && result.body).toBe('!admin users create bob');
   });
 
   test('omits an unset optional boolean and reports what is missing or malformed', () => {
-    const result = buildInvocation(command(), {
-      target_room: '',
-      target_users: [],
-      timeout_seconds: 'soon',
-    });
+    const result = buildInvocation(
+      command(),
+      {
+        target_room: '',
+        target_users: [],
+        timeout_seconds: 'soon',
+      },
+      '/',
+      'matrix.to'
+    );
     expect(result).toEqual({
       kind: 'invalid',
       errors: { target_room: 'required', timeout_seconds: 'invalid', target_users: 'required' },
@@ -175,7 +191,7 @@ describe('buildInvocation', () => {
         },
       ],
     });
-    const result = buildInvocation(mode, { mode: '42' });
+    const result = buildInvocation(mode, { mode: '42' }, '/', 'matrix.to');
     expect(result.kind === 'built' && result.invocation.arguments.mode).toBe(42);
   });
 
@@ -184,9 +200,14 @@ describe('buildInvocation', () => {
       command: 'quote',
       parameters: [{ key: 'event', schema: { schema_type: 'primitive', type: 'event_id' } }],
     });
-    const result = buildInvocation(quote, {
-      event: 'https://matrix.to/#/!room:example.org/$event?via=example.org',
-    });
+    const result = buildInvocation(
+      quote,
+      {
+        event: 'https://matrix.to/#/!room:example.org/$event?via=example.org',
+      },
+      '/',
+      'matrix.to'
+    );
     expect(result.kind === 'built' && result.invocation.arguments.event).toEqual({
       type: 'event_id',
       id: '!room:example.org',
@@ -265,5 +286,64 @@ describe('draftsFromText', () => {
       ],
     });
     expect(draftsFromText(limit, '')).toEqual({ count: '10' });
+  });
+});
+
+describe('prefillDrafts', () => {
+  const issue = command({
+    command: 'issue',
+    parameters: [
+      {
+        key: 'environment',
+        schema: { schema_type: 'primitive', type: 'string' },
+        'moe.sable.prefill': 'environment',
+      },
+      {
+        key: 'platforms',
+        schema: {
+          schema_type: 'array',
+          items: { schema_type: 'union', variants: [{ schema_type: 'literal', value: 'macOS' }] },
+        },
+        optional: true,
+        'moe.sable.prefill': 'platform',
+      },
+    ],
+  });
+
+  test('fills the environment and platform for the user to edit', async () => {
+    const drafts = draftsFromText(issue, '');
+    await prefillDrafts(issue, drafts, 'example.org');
+    expect(drafts.environment).toContain('- OS: macOS 15');
+    expect(drafts.environment).toContain('- Homeserver: example.org');
+    expect(drafts.platforms).toEqual(['macOS']);
+  });
+
+  test('leaves commands without prefill hints alone', async () => {
+    const drafts = draftsFromText(command(), '');
+    const before = structuredClone(drafts);
+    await prefillDrafts(command(), drafts, 'example.org');
+    expect(drafts).toEqual(before);
+  });
+
+  test('skips a platform the bot does not offer', async () => {
+    const linuxOnly = command({
+      command: 'issue',
+      parameters: [
+        {
+          key: 'platforms',
+          schema: { schema_type: 'union', variants: [{ schema_type: 'literal', value: 'Linux' }] },
+          'moe.sable.prefill': 'platform',
+        },
+      ],
+    });
+    const drafts = draftsFromText(linuxOnly, '');
+    await prefillDrafts(linuxOnly, drafts, 'example.org');
+    expect(drafts.platforms).toBe('');
+  });
+
+  test('keeps what the user already typed', async () => {
+    const drafts = { environment: 'Sable 1.0 on Firefox', platforms: [] };
+    await prefillDrafts(issue, drafts, 'example.org');
+    expect(drafts.environment).toBe('Sable 1.0 on Firefox');
   });
 });

@@ -10,8 +10,7 @@ import type {
 } from '#src/generated/protocol';
 
 import { roomView } from '#lib/test-support/room-views.js';
-
-import en from '../../../locales/en.json' with { type: 'json' };
+import { reactiveToggle } from '#lib/test-support/toggle.svelte.js';
 
 const core = vi.hoisted((): Record<string, unknown> => ({}));
 
@@ -19,6 +18,7 @@ vi.mock('#lib/core/context.js', () => ({
   useCoreClient: () => core,
   provideCoreClient: vi.fn(),
 }));
+vi.mock('#lib/i18n.js', () => import('#lib/test-support/i18n.js'));
 vi.mock('$app/navigation', () => import('#lib/test-support/app-navigation.js'));
 vi.mock('$app/state', () => import('#lib/test-support/app-state.js'));
 vi.mock('../room/messages/event-items.svelte.js', async (importOriginal) => ({
@@ -28,7 +28,9 @@ vi.mock('../room/messages/event-items.svelte.js', async (importOriginal) => ({
 vi.mock('#lib/rooms/room-list.svelte.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('#lib/rooms/room-list.svelte.js')>()),
   useRoomList: () => ({
-    rooms,
+    get rooms() {
+      return allRooms.on ? rooms : rooms.slice(0, 1);
+    },
     byId: (roomId: string) => rooms.find((room) => room.room_id === roomId),
     labelFor: (roomId: string) => rooms.find((room) => room.room_id === roomId)?.name ?? roomId,
   }),
@@ -40,14 +42,16 @@ function room(overrides: Partial<RoomListItemView>): RoomListItemView {
   return roomView({ room_id: '!id:example.org', encrypted: false, ...overrides });
 }
 
+const allRooms = reactiveToggle();
 const rooms = [
   room({ room_id: '!general:example.org', name: 'General' }),
   room({ room_id: '!random:example.org', name: 'Random' }),
 ];
 
 async function mount() {
+  allRooms.on = true;
   let onEvent: ((event: CoreEvent) => void) | undefined;
-  const messages = vi.fn().mockResolvedValue({ hits: [], older: null });
+  const messages = vi.fn().mockResolvedValue({ hits: [] });
   Object.assign(core, {
     session: { user_id: '@me:example.org' },
     searchCoverageUnavailable: false,
@@ -66,9 +70,9 @@ async function mount() {
     },
   });
   const screen = await render(SearchView);
-  const field = screen.getByRole('combobox', { name: en.common.searchMessages });
-  const listbox = screen.getByRole('listbox', { name: en.search.suggestions });
-  const chips = screen.getByRole('list', { name: en.search.activeFilters }).getByRole('listitem');
+  const field = screen.getByRole('combobox', { name: 'common.searchMessages' });
+  const listbox = screen.getByRole('listbox', { name: 'search.suggestions' });
+  const chips = screen.getByRole('list', { name: 'search.activeFilters' }).getByRole('listitem');
   return {
     screen,
     field,
@@ -88,6 +92,7 @@ function hit(eventId: string): SearchHitView {
     sender: '@alice:example.org',
     origin_server_ts: 1700000000000,
     score: 1,
+    matched: [],
     context_before: [],
     context_after: [],
   };
@@ -223,7 +228,7 @@ test('the remove button drops the chip', async () => {
   await userEvent.fill(field.element(), 'message in:Random ');
   await expect.element(chips).toHaveTextContent('in: Random');
 
-  await userEvent.click(screen.getByRole('button', { name: 'Remove in:Random' }));
+  await userEvent.click(screen.getByRole('button', { name: 'search.removeFilter:in:Random' }));
 
   await expect.element(chips).not.toBeInTheDocument();
 });
@@ -264,7 +269,7 @@ test('the first ArrowDown selects the first unhighlighted suggestion', async () 
 test('clicking a filter selects its value and keeps the search text', async () => {
   const { screen, field, chips } = await mount();
   await userEvent.fill(field.element(), 'message in:Random ');
-  await userEvent.click(screen.getByRole('button', { name: 'Edit in:Random' }));
+  await userEvent.click(screen.getByRole('button', { name: 'search.editFilter:in:Random' }));
   await expect.element(field).toHaveValue('message in:Random');
   const input = field.element() as HTMLInputElement;
   expect(input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)).toBe('Random');
@@ -276,24 +281,32 @@ test('clicking a filter selects its value and keeps the search text', async () =
 test('editing a date keeps the other filters', async () => {
   const { screen, field, chips } = await mount();
   await userEvent.fill(field.element(), 'in:Random before:2024-01-01 message');
-  await userEvent.click(screen.getByRole('button', { name: 'Edit before:2024-01-01' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'search.editFilter:before:2024-01-01' })
+  );
   await expect.element(field).toHaveValue('message before:2024-01-01');
   await userEvent.keyboard('2025-01-01 ');
   await expect.element(chips).toHaveLength(2);
   await expect
-    .element(screen.getByRole('button', { name: 'Edit before:2025-01-01' }))
+    .element(screen.getByRole('button', { name: 'search.editFilter:before:2025-01-01' }))
     .toBeVisible();
-  await expect.element(screen.getByRole('button', { name: 'Edit in:Random' })).toBeVisible();
+  await expect
+    .element(screen.getByRole('button', { name: 'search.editFilter:in:Random' }))
+    .toBeVisible();
 });
 
 test('editing a quoted filter preserves its negation', async () => {
   const { screen, field } = await mount();
   await userEvent.fill(field.element(), 'has:image -in:"Random" message');
-  await userEvent.click(screen.getByRole('button', { name: 'Edit -in:Random' }));
+  await userEvent.click(screen.getByRole('button', { name: 'search.editFilter:-in:Random' }));
   await expect.element(field).toHaveValue('message -in:"Random"');
   await userEvent.keyboard('General ');
-  await expect.element(screen.getByRole('button', { name: 'Edit -in:General' })).toBeVisible();
-  await expect.element(screen.getByRole('button', { name: 'Edit has:image' })).toBeVisible();
+  await expect
+    .element(screen.getByRole('button', { name: 'search.editFilter:-in:General' }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole('button', { name: 'search.editFilter:has:image' }))
+    .toBeVisible();
 });
 
 test('a pagination error keeps results visible and retries the failed page', async () => {
@@ -301,32 +314,40 @@ test('a pagination error keeps results visible and retries the failed page', asy
   messages
     .mockResolvedValueOnce({
       hits: Array.from({ length: 30 }, (_, index) => hit(`$first${index}`)),
-      older: null,
     })
     .mockRejectedValueOnce(new Error('offline'))
-    .mockResolvedValue({ hits: [hit('$next')], older: null });
+    .mockResolvedValue({ hits: [hit('$next')] });
   await userEvent.fill(field.element(), 'deploy');
-  const rows = screen.getByRole('group', { name: /^Open message from/ });
+  const rows = screen.getByRole('group', { name: /^search\.openResultFrom/ });
   await expect.element(rows).toHaveLength(30);
-  (screen.getByRole('button', { name: en.search.loadMore }).element() as HTMLButtonElement).click();
-  await expect.element(screen.getByText(en.search.loadFailed, { exact: true })).toBeVisible();
+  (screen.getByRole('button', { name: 'search.loadMore' }).element() as HTMLButtonElement).click();
+  await expect.element(screen.getByText('search.loadFailed', { exact: true })).toBeVisible();
   await expect.element(rows).toHaveLength(30);
-  await userEvent.click(screen.getByRole('button', { name: en.common.tryAgain }));
+  await userEvent.click(screen.getByRole('button', { name: 'common.tryAgain' }));
   await expect.element(rows).toHaveLength(31);
   expect(messages).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 30 }));
 });
 
 test('indexing updates refresh an unchanged search', async () => {
   const { screen, field, messages, emitCoverage } = await mount();
-  messages
-    .mockResolvedValueOnce({ hits: [], older: null })
-    .mockResolvedValue({ hits: [hit('$indexed')], older: null });
+  messages.mockResolvedValueOnce({ hits: [] }).mockResolvedValue({ hits: [hit('$indexed')] });
   await userEvent.fill(field.element(), 'deploy');
-  await expect.element(screen.getByRole('status')).toHaveTextContent(en.search.empty);
+  await expect.element(screen.getByRole('status')).toHaveTextContent('search.empty');
   emitCoverage({ documents: 1, rooms_pending: 0, rooms_failed: 0, state: 'complete' });
-  await expect.element(screen.getByRole('group', { name: /^Open message from/ })).toHaveLength(1);
+  await expect
+    .element(screen.getByRole('group', { name: /^search\.openResultFrom/ }))
+    .toHaveLength(1);
   await expect.element(field).toHaveValue('deploy');
   expect(messages).toHaveBeenCalledTimes(2);
+});
+
+test('a result marks the words the core matched it on', async () => {
+  const { screen, field, messages } = await mount();
+  messages.mockResolvedValue({
+    hits: [{ ...hit('$category'), body: 'the category list', matched: ['category'] }],
+  });
+  await userEvent.fill(field.element(), 'cat');
+  await expect.element(screen.getByRole('mark')).toHaveTextContent('category');
 });
 
 test('accepting a suggestion closes the list instead of reopening it', async () => {
@@ -432,7 +453,7 @@ test('a negated date bound is reported as unsupported', async () => {
 
   await userEvent.fill(field.element(), 'message -before:2024-01-01');
 
-  await expect.element(screen.getByText('Not supported yet: -before')).toBeVisible();
+  await expect.element(screen.getByText('search.unsupported:-before')).toBeVisible();
 });
 
 test('a negated chip names the negation in its remove button', async () => {
@@ -440,7 +461,9 @@ test('a negated chip names the negation in its remove button', async () => {
 
   await userEvent.fill(field.element(), 'message -in:Random ');
 
-  await expect.element(screen.getByRole('button', { name: 'Remove -in:Random' })).toBeVisible();
+  await expect
+    .element(screen.getByRole('button', { name: 'search.removeFilter:-in:Random' }))
+    .toBeVisible();
 });
 
 test('clicking the field padding focuses the input', async () => {
@@ -472,4 +495,21 @@ test('a starter filter begins a filter and offers its values', async () => {
 
   await expect.element(field).toHaveFocus();
   await expect.element(screen.getByRole('listbox')).toBeVisible();
+});
+
+test('Enter accepts a shown suggestion after the arrowed one drops out of the list', async () => {
+  const { field, chips } = await mount();
+
+  await userEvent.fill(field.element(), 'in:');
+  await userEvent.keyboard('{ArrowUp}');
+  await expect
+    .element(field)
+    .toHaveAttribute('aria-activedescendant', expect.stringMatching(/-1$/));
+  allRooms.on = false;
+  await expect
+    .element(field)
+    .toHaveAttribute('aria-activedescendant', expect.stringMatching(/-0$/));
+
+  await userEvent.keyboard('{Enter}');
+  await expect.element(chips).toHaveTextContent('in: General');
 });

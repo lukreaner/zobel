@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_with::{DefaultOnError, NoneAsEmptyString, VecSkipError, serde_as};
 
-use crate::Core;
+use crate::SignedIn;
 use crate::cosmetics::{COLOR_EVENT, MEMBER_COLOR_FIELD, MEMBER_EVENT, PRONOUNS_EVENT};
 use crate::protocol::{FieldEdit, MemberLookView, PronounView, RpcCode, RpcError};
 use crate::room_settings::EmptyContent;
@@ -102,7 +102,9 @@ pub(crate) fn member_look(member: Option<&Value>, pronouns: Option<&Value>) -> M
         .unwrap_or_default();
     MemberLookView {
         display_name: member.display_name,
-        avatar_url: member.avatar_url,
+        avatar_url: member
+            .avatar_url
+            .and_then(|url| crate::media::mxc_only(&url)),
         color_on_light: colors.as_ref().and_then(|colors| colors.on_light.clone()),
         color_on_dark: colors.and_then(|colors| colors.on_dark),
         pronouns: pronouns
@@ -160,7 +162,7 @@ pub(crate) fn pronouns_content(pronouns: &[PronounView]) -> PronounsOut {
     PronounsOut { pronouns }
 }
 
-impl Core {
+impl SignedIn {
     async fn look_target(
         &self,
         room_id: OwnedRoomId,
@@ -169,17 +171,18 @@ impl Core {
         if !in_parent_space {
             return Ok(room_id);
         }
-        let client = self.client().await?;
-        let room = self.room(&room_id).await?;
-        Ok(crate::cosmetics::first_space_parent(self, &client, &room)
-            .await
-            .unwrap_or(room_id))
+        let client = self.client();
+        let room = self.room(&room_id)?;
+        Ok(
+            crate::cosmetics::first_space_parent(self.core(), client, &room)
+                .await
+                .unwrap_or(room_id),
+        )
     }
 
-    async fn own_user(&self) -> Result<String, RpcError> {
+    fn own_user(&self) -> Result<String, RpcError> {
         Ok(self
             .client()
-            .await?
             .user_id()
             .ok_or(RpcCode::NotLoggedIn)?
             .to_string())
@@ -189,7 +192,7 @@ impl Core {
         &self,
         LookParams { room_id }: LookParams,
     ) -> Result<MemberLookView, RpcError> {
-        let user_id = self.own_user().await?;
+        let user_id = self.own_user()?;
         let member = self
             .room_state_event_content(room_id.clone(), MEMBER_EVENT.to_owned(), user_id.clone())
             .await?;
@@ -206,7 +209,7 @@ impl Core {
         edit: LookEdit,
     ) -> Result<(), RpcError> {
         let target = self.look_target(room_id, in_parent_space).await?;
-        let user_id = self.own_user().await?;
+        let user_id = self.own_user()?;
         let member = self
             .room_state_event_content(target.clone(), MEMBER_EVENT.to_owned(), user_id.clone())
             .await?;
@@ -227,7 +230,7 @@ impl Core {
         pronouns: &[PronounView],
     ) -> Result<(), RpcError> {
         let target = self.look_target(room_id, in_parent_space).await?;
-        let user_id = self.own_user().await?;
+        let user_id = self.own_user()?;
         self.send_state(
             target,
             PRONOUNS_EVENT,
@@ -311,6 +314,21 @@ mod tests {
         assert_eq!(
             member_look(None, Some(&json!({ "pronouns": "x" }))).pronouns,
             []
+        );
+    }
+
+    #[test]
+    fn a_remote_member_avatar_reads_as_missing() {
+        let remote = json!({
+            "displayname": "Ana",
+            "avatar_url": "https://tracker.example/pixel.png",
+        });
+        assert_eq!(member_look(Some(&remote), None).avatar_url, None);
+
+        let matrix = json!({ "avatar_url": "mxc://example.org/face" });
+        assert_eq!(
+            member_look(Some(&matrix), None).avatar_url.as_deref(),
+            Some("mxc://example.org/face")
         );
     }
 

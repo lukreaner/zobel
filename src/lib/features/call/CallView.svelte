@@ -139,6 +139,7 @@
 
   let noticeHeight = $state(0);
   let dockHeight = $state(0);
+  let nativeVideo = $derived(session.localVideo !== undefined || session.remoteVideo !== undefined);
   let mediaWidth = $state(0);
   let mediaHeight = $state(0);
   let aspect = $derived(mediaWidth > 0 && mediaWidth < NARROW_STAGE_PX ? 1 : 16 / 9);
@@ -416,6 +417,7 @@
           session.listenOnly ||
           backendUnreachable,
         locked: busy,
+        'native-video': nativeVideo,
       },
     ]}
     style:--tile-aspect={aspect}
@@ -696,13 +698,7 @@
     flex: 1;
     min-height: 0;
     padding: calc(var(--space-200) + var(--control-height-300) + var(--space-200)) var(--space-300)
-      max(
-        var(--dock-height),
-        calc(
-          var(--control-height-500) + var(--space-150) * 2 + var(--border-width) * 2 +
-            var(--space-300) * 2
-        )
-      );
+      var(--space-300);
   }
 
   .media.with-notice {
@@ -712,13 +708,24 @@
   }
 
   .media.locked {
+    padding-block-end: calc(
+      var(--control-height-500) + var(--space-150) * 3 + var(--border-width) * 2 +
+        var(--space-300) * 2 + var(--space-500)
+    );
+  }
+
+  .media.native-video {
     padding-block-end: max(
       var(--dock-height),
       calc(
-        var(--control-height-500) + var(--space-150) * 3 + var(--border-width) * 2 +
-          var(--space-300) * 2 + var(--space-500)
+        var(--control-height-500) + var(--space-150) * 2 + var(--border-width) * 2 +
+          var(--space-300) * 2
       )
     );
+  }
+
+  .resting .media.native-video {
+    padding-block-end: var(--space-300);
   }
 
   .failed {

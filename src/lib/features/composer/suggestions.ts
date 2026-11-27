@@ -151,6 +151,7 @@ function roomSuggestions(
   if (!normalizedNeedle) return [];
   const seen = new Set<string>();
   return rooms
+    .filter((room) => room.canonical_alias || room.state === 'joined')
     .map((room) => {
       const name = room.name ?? room.canonical_alias ?? room.room_id;
       return {
@@ -216,6 +217,7 @@ function commandSuggestions(
   const bots = botCommands
     .filter((command) => !builtIn.has(command.command.toLowerCase()))
     .map((command) => {
+      // eslint-disable-next-line no-restricted-properties -- no profile here
       const bot = command.sender_name ?? command.sender;
       return {
         name: command.command.toLowerCase(),

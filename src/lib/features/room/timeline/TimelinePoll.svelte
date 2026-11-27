@@ -28,12 +28,10 @@
   let maxValue = $derived(Math.max(...poll.answers.map((answer) => answer.votes ?? 0)));
   let votersAnswers = $derived(poll.answers.filter((answer) => answer.voters !== null));
   let votersOpen = $state(false);
-  let votersActive = $state(0);
+  let votersActive = $state<string>();
 
   function viewVoters(answerId: string) {
-    const index = votersAnswers.findIndex((answer) => answer.id === answerId);
-    if (index === -1) return;
-    votersActive = index;
+    votersActive = answerId;
     votersOpen = true;
   }
 
@@ -82,11 +80,7 @@
             pick(answer.id);
           }}
         >
-          <span
-            class="fill"
-            aria-pressed={answer.selected}
-            style:scale={`${String(percent / 100)} 1`}
-          ></span>
+          <span class="fill" style:scale={`${String(percent / 100)} 1`}></span>
           <span class="text" dir="auto">{answer.text}</span>
           {#if answer.selected && answer.votes === null}
             <CheckIcon class="chosen" aria-hidden="true" weight="bold" />
@@ -100,7 +94,9 @@
               onclick={() => {
                 viewVoters(answer.id);
               }}
-              aria-label={i18n.t('timeline.pollViewVoters', { answer: answer.text })}
+              aria-label={i18n.t('timeline.pollVotes', { count: answer.votes }) +
+                '. ' +
+                i18n.t('timeline.pollViewVoters', { answer: answer.text })}
             >
               {i18n.t('timeline.pollVotes', { count: answer.votes })}
             </button>
@@ -235,7 +231,7 @@
     width: 100%;
   }
 
-  .fill[aria-pressed='true'] {
+  .answer[aria-pressed='true'] .fill {
     background: var(--primary-container);
   }
 

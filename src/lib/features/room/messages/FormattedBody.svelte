@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { matrixLinkPath } from '#lib/rooms/permalink.js';
-  import { copyText } from '#lib/platform/clipboard.js';
   import { mount, unmount, untrack, type Component } from 'svelte';
   import { on } from 'svelte/events';
   import ChatCircleIcon from 'phosphor-svelte/lib/ChatCircleIcon';
@@ -35,16 +34,20 @@
     useRoomMediaPreviews,
   } from '../media/room-media-previews.svelte.js';
 
-  import type { MatrixLink } from '#lib/rooms/matrix-link.js';
-  import { parseMatrixLink } from '#lib/rooms/matrix-link.js';
+  import {
+    matrixLinkDestination,
+    parseMatrixLink,
+    type MatrixLink,
+  } from '#lib/rooms/matrix-link.js';
   import { splitVia } from '#lib/rooms/join-address.js';
   import { settingsLinkLabel } from '../settings/settings-link-label';
   import { parseSettingsLink } from '../settings/settings-link';
   import { replyPreviewBody } from './reply-preview';
   import { FormattedBodyImages } from './formatted-body-images';
+  import CodeBlockHeader from './CodeBlockHeader.svelte';
   import EmoteCard from './EmoteCard.svelte';
   import ImageSpoilerControl from '#lib/ui/ImageSpoilerControl.svelte';
-  import { toasts } from '#lib/ui/toasts.svelte.js';
+  import { splitCodeLines } from '#lib/ui/code-lines.js';
 
   interface Props {
     html: string;
@@ -247,7 +250,7 @@
     return (node: HTMLElement) => {
       void html;
       return untrack(() => {
-        const icons: ReturnType<typeof mount>[] = [];
+        const mounted: ReturnType<typeof mount>[] = [];
         for (const table of node.querySelectorAll('table')) {
           if (table.parentElement?.classList.contains('table-scroll')) continue;
           const scroller = document.createElement('div');
@@ -263,7 +266,7 @@
           const label = document.createElement('span');
           label.textContent = anchor.textContent;
           anchor.replaceChildren(holder, label);
-          icons.push(mount(icon, { target: holder }));
+          mounted.push(mount(icon, { target: holder }));
           return label;
         };
         for (const anchor of node.querySelectorAll('a')) {
@@ -322,7 +325,7 @@
           }
         }
 
-        decorateCodeBlocks(node);
+        decorateCodeBlocks(node, mounted);
         const maths = node.querySelectorAll<HTMLElement>('[data-mx-maths]');
         if (maths.length > 0) void renderMaths(maths);
 
@@ -342,7 +345,7 @@
           offFocusOut();
           offWindowBlur();
           closeDefinition();
-          for (const icon of icons) void unmount(icon);
+          for (const component of mounted) void unmount(component);
         };
       });
     };
@@ -362,7 +365,8 @@
         const zoned = time ? parseZonedDatetime(time.dateTime) : null;
         if (!time || !zoned) continue;
         time.textContent = formatMessageTimestamp(zoned.instant);
-        if (chip instanceof HTMLButtonElement) chip.ariaLabel = timeDetail(chip);
+        if (chip instanceof HTMLButtonElement)
+          chip.ariaLabel = formatMessageTimestamp(zoned.instant);
       }
 
       for (const image of node.querySelectorAll<HTMLImageElement>('img[data-mx-emoticon]')) {
@@ -449,57 +453,42 @@
     }
   }
 
-  function codeLanguage(block: HTMLElement): string | null {
-    return classLanguage(block.querySelector('code')) ?? classLanguage(block);
-  }
-
-  function decorateCodeBlocks(node: HTMLElement): void {
+  function decorateCodeBlocks(node: HTMLElement, mounted: ReturnType<typeof mount>[]): void {
     for (const block of node.querySelectorAll<HTMLPreElement>('pre')) {
       if (block.dataset.codeHandled !== undefined) continue;
       block.dataset.codeHandled = '';
 
-      const language = codeLanguage(block);
+      const code = block.querySelector('code');
+      const language = classLanguage(code) ?? classLanguage(block);
       trimTrailingNewline(block);
-      const long = block.textContent.split('\n').length > CODE_LINE_LIMIT;
+      const lineCount = block.textContent.split('\n').length;
+      const collapsible = lineCount > CODE_LINE_LIMIT;
+      const numbered = code !== null && code.textContent.includes('\n');
 
       const figure = document.createElement('div');
       figure.className = 'code-block';
-      if (long) figure.dataset.collapsed = '';
+      block.classList.add('code-body');
+      if (numbered) splitCodeLines(code);
 
-      const header = document.createElement('div');
-      header.className = 'code-head';
-
-      const label = document.createElement('span');
-      label.className = 'code-language';
-      label.textContent = language ?? i18n.t('timeline.codeLabel');
-      header.append(label);
-
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'code-action';
-      copy.dataset.codeCopy = '';
-      copy.textContent = i18n.t('common.copy');
-      header.append(copy);
-
-      if (long) {
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'code-action';
-        toggle.dataset.codeToggle = '';
-        toggle.textContent = i18n.t('timeline.expandCode');
-        header.append(toggle);
-      }
-
+      mounted.push(
+        mount(CodeBlockHeader, {
+          target: figure,
+          props: { block, figure, language, numbered, collapsible },
+        })
+      );
       block.replaceWith(figure);
-      figure.append(header, block);
-      void paintHighlight(block, language);
+      figure.append(block);
+      if (code !== null && language !== null) void paintHighlight(code, language, numbered);
     }
   }
 
-  async function paintHighlight(block: HTMLPreElement, language: string | null): Promise<void> {
-    const code = block.querySelector('code');
-    const source = code?.textContent;
-    if (!code || !source || language === null || source.length > CODE_HIGHLIGHT_LIMIT) return;
+  async function paintHighlight(
+    code: HTMLElement,
+    language: string,
+    numbered: boolean
+  ): Promise<void> {
+    const source = code.textContent;
+    if (!source || source.length > CODE_HIGHLIGHT_LIMIT) return;
 
     const html = await import('#lib/ui/code-highlight.js')
       .then(({ highlightCode }) => highlightCode(source, language))
@@ -510,38 +499,7 @@
     // The row may have scrolled out of the virtualiser while the grammar loaded.
     if (html === null || !code.isConnected) return;
     code.innerHTML = html;
-  }
-
-  function handleCodeAction(target: Element): boolean {
-    const button = target.closest<HTMLButtonElement>('.code-action');
-    const figure = button?.closest<HTMLElement>('.code-block');
-    const block = figure?.querySelector('pre');
-    if (!button || !figure || !block) return false;
-
-    if (button.dataset.codeToggle !== undefined) {
-      const collapsed = figure.dataset.collapsed !== undefined;
-      if (collapsed) delete figure.dataset.collapsed;
-      else figure.dataset.collapsed = '';
-      button.textContent = collapsed
-        ? i18n.t('timeline.collapseCode')
-        : i18n.t('timeline.expandCode');
-      return true;
-    }
-
-    if (button.dataset.codeCopy === undefined) return false;
-    const label = button;
-    void copyText(block.textContent)
-      .then(() => {
-        label.textContent = i18n.t('common.copied');
-        setTimeout(() => {
-          if (label.isConnected) label.textContent = i18n.t('common.copy');
-        }, 1500);
-      })
-      .catch((error: unknown) => {
-        console.debug('[sable code] clipboard unavailable', error);
-        toasts.error(i18n.t('errors.actionFailed'));
-      });
-    return true;
+    if (numbered) splitCodeLines(code);
   }
 
   function reveal(target: Element): boolean {
@@ -553,21 +511,24 @@
   }
 
   function linkTarget(anchor: HTMLAnchorElement): string | null {
-    if (anchor.dataset.matrixLink || anchor.dataset.settingsLink) return null;
+    if (anchor.dataset.settingsLink) return null;
     const text = anchor.textContent.trim();
-    return text === anchor.href || text === anchor.getAttribute('href') ? null : anchor.href;
+    if (text === anchor.href || text === anchor.getAttribute('href')) return null;
+    const matrix = anchor.dataset.matrixLink ? parseMatrixLink(anchor.href) : null;
+    const destination = matrix ? matrixLinkDestination(matrix) : anchor.href;
+    return text === destination ? null : destination;
   }
 
   function definitionOf(target: EventTarget | null): HTMLElement | null {
-    let found =
-      target instanceof Element
-        ? target.closest<HTMLElement>(
-            'abbr[data-abbr-definition], .time-chip, img[data-mx-emoticon], a[href]'
-          )
-        : null;
-    if (found instanceof HTMLAnchorElement && !linkTarget(found)) found = null;
-    const spoiler = found?.closest<HTMLElement>('[data-mx-spoiler]');
-    return spoiler && spoiler.ariaPressed !== 'false' ? null : found;
+    if (!(target instanceof Element)) return null;
+    const spoiler = target.closest<HTMLElement>('[data-mx-spoiler]');
+    if (spoiler && spoiler.ariaPressed !== 'false') return null;
+    const matrix = target.closest<HTMLAnchorElement>('a[data-matrix-link]');
+    if (matrix && linkTarget(matrix) !== null) return matrix;
+    const found = target.closest<HTMLElement>(
+      'abbr[data-abbr-definition], .time-chip, img[data-mx-emoticon], a[href]'
+    );
+    return found instanceof HTMLAnchorElement && !linkTarget(found) ? null : found;
   }
 
   function closeDefinition(): void {
@@ -609,10 +570,6 @@
     }
     if (definitionPinned) closeDefinition();
 
-    if (handleCodeAction(target)) {
-      event.preventDefault();
-      return;
-    }
     if (reveal(target)) {
       event.preventDefault();
       return;
@@ -639,6 +596,7 @@
       event.preventDefault();
       return;
     }
+    // eslint-disable-next-line no-restricted-syntax -- not a text input
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const target = event.target;
     if (!(target instanceof Element) || !target.matches('[data-mx-spoiler]')) return;
@@ -680,7 +638,7 @@
 {/snippet}
 
 {#snippet linkCard()}
-  <span class="link-card">{definition}</span>
+  <bdi dir="ltr" class="link-card">{definition}</bdi>
 {/snippet}
 
 {#if definitionAnchor && definition}
@@ -929,44 +887,6 @@
     margin: var(--space-100) 0;
     overflow: hidden;
     position: relative;
-  }
-
-  .formatted-body :global(.code-head) {
-    align-items: center;
-    background: var(--surface-container);
-    border-bottom: var(--border-width) solid var(--surface-container-line);
-    color: var(--surface-on-container);
-    display: flex;
-    gap: var(--space-200);
-    min-height: var(--control-height-small);
-    padding: 0 var(--space-200);
-  }
-
-  .formatted-body :global(.code-language) {
-    color: var(--surface-var-on-container);
-    flex: 1;
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-medium);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .formatted-body :global(.code-action) {
-    background: none;
-    border: 0;
-    border-radius: var(--radius-pill);
-    color: var(--primary-main);
-    cursor: pointer;
-    flex: 0 0 auto;
-    font: inherit;
-    font-size: var(--font-size-small);
-    padding: 0 var(--space-200);
-  }
-
-  .formatted-body :global(.code-action:hover) {
-    background: var(--surface-container-hover);
   }
 
   /* An expanded block never scrolls vertically: a scroller there would swallow

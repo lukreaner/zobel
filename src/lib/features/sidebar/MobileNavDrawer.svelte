@@ -12,7 +12,7 @@
   import UserQuickTools from '#lib/features/sidebar/UserQuickTools.svelte';
   import { providePageMeta } from '#lib/core/page-meta.js';
   import { HorizontalSwipe } from '#lib/ui/horizontal-swipe.svelte.js';
-  import { currentDirection } from '#lib/language.svelte.js';
+  import { inlineSign } from '#lib/language.svelte.js';
   import { AppLayout } from '#lib/ui/app-layout.svelte.js';
   import {
     backToRoomList,
@@ -32,7 +32,7 @@
 
   let position = $state<number | undefined>();
   const swipe = new HorizontalSwipe();
-  let sign = $derived(currentDirection() === 'rtl' ? -1 : 1);
+  let sign = $derived(inlineSign());
   let swipeWidth = 0;
   let cancelSettle: (() => void) | undefined;
   let cancelRoute: (() => void) | undefined;
@@ -50,7 +50,7 @@
   let settledPath = $state(page.url.pathname);
   let routeChanging = $derived(pathname !== settledPath && page.params.roomId === undefined);
   let spaceIndex = $derived(/^\/space\/[^/]+$/.test(pathname));
-  let spaceLobby = $derived(/^\/space\/[^/]+\/lobby$/.test(pathname));
+  let spaceLobbyOrRules = $derived(/^\/space\/[^/]+\/(?:lobby|rules)$/.test(pathname));
   let settingsPage = $derived(/^\/settings(\/[^/]+)?$/.test(pathname));
   let defaultOpen = $derived(LIST_INDEX_PATHS.has(pathname) || spaceIndex);
   let pinnedOpen = $derived(BLANK_INDEX_PATHS.has(pathname) || spaceIndex);
@@ -60,7 +60,7 @@
     !appLayout.current &&
       !pinnedOpen &&
       !showMobileQuickTools &&
-      !spaceLobby &&
+      !spaceLobbyOrRules &&
       !settingsPage &&
       page.params.roomId === undefined
   );
@@ -200,7 +200,10 @@
     ) {
       return;
     }
-    if (link.pathname === pathname) {
+    if (
+      link.pathname === pathname &&
+      new URL(link.href).searchParams.get('thread') === page.url.searchParams.get('thread')
+    ) {
       event.preventDefault();
       setOpen(false);
       return;

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { TimelineItemView } from '#src/generated/protocol';
+import type { PerMessageProfileView, TimelineItemView } from '#src/generated/protocol';
 
 import { collectForumThreads, filterThreads, sortThreads } from './forum-threads';
 import { withRowFields } from '#lib/features/room/timeline/row-fixtures.js';
@@ -32,6 +32,7 @@ function item(overrides: Partial<TimelineItemView> & { id: string }): TimelineIt
     per_message_profile: null,
     bundled_link_previews: [],
     link_previews_removed: null,
+    shared_by: null,
     redacted_on_ban: null,
     mention: 'none',
     forwarded: null,
@@ -48,8 +49,12 @@ test('collects an item with a thread summary as a root', () => {
     thread_summary: {
       num_replies: 2,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'latest',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
 
@@ -69,8 +74,12 @@ test('hides a redacted post even when its thread summary remains', () => {
     thread_summary: {
       num_replies: 2,
       latest_event_id: '$reply',
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'latest',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const reply = item({ id: 'reply', thread_root: '$root' });
@@ -139,6 +148,7 @@ test('ignores a thread reply, a plain reply and a state change', () => {
       sender_name: null,
       body: null,
       fallback: null,
+      emotes: [],
     },
   });
   const joined = item({
@@ -162,8 +172,12 @@ test('takes last activity from the newest visible reply, not the root', () => {
     thread_summary: {
       num_replies: 2,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'root summary',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const reply = item({
@@ -187,8 +201,12 @@ test('sorts threads by most recent activity first', () => {
     thread_summary: {
       num_replies: 0,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: null,
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const newer = item({
@@ -197,8 +215,12 @@ test('sorts threads by most recent activity first', () => {
     thread_summary: {
       num_replies: 0,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: null,
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
 
@@ -215,8 +237,12 @@ test('a thread is unread when the latest activity has no receipt from the curren
     thread_summary: {
       num_replies: 0,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: null,
       latest_fallback: null,
+      latest_emotes: [],
     },
     read_by: [],
     read_timestamps: {},
@@ -233,8 +259,12 @@ test('a thread is read once the current user has a receipt on the latest activit
     thread_summary: {
       num_replies: 0,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: null,
       latest_fallback: null,
+      latest_emotes: [],
     },
     read_by: ['@alice:example.org'],
   });
@@ -250,8 +280,12 @@ test('a thread you authored yourself is never unread', () => {
     thread_summary: {
       num_replies: 0,
       latest_event_id: null,
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: null,
       latest_fallback: null,
+      latest_emotes: [],
     },
     read_by: [],
     read_timestamps: {},
@@ -304,8 +338,12 @@ test('uses hydrated latest replies and thread receipts when the main timeline hi
     thread_summary: {
       num_replies: 2,
       latest_event_id: '$reply',
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'New reply',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const newer = item({ id: 'newer', timestamp: 20 });
@@ -477,8 +515,12 @@ test('a deleted latest reply falls back to the previous reply', () => {
     thread_summary: {
       num_replies: 2,
       latest_event_id: '$deleted',
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'Deleted reply text',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const earlier = item({ id: 'earlier', thread_root: '$root', timestamp: 5 });
@@ -500,8 +542,12 @@ test.each(['timeline', 'hydrated'])('a deleted latest reply from %s is not previ
     thread_summary: {
       num_replies: 1,
       latest_event_id: '$reply',
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: 'Deleted reply text',
       latest_fallback: null,
+      latest_emotes: [],
     },
   });
   const reply = item({
@@ -517,4 +563,23 @@ test.each(['timeline', 'hydrated'])('a deleted latest reply from %s is not previ
   expect(threads).toHaveLength(1);
   expect(threads[0]?.preview).toBe('root');
   expect(threads[0]?.lastBody).toBeNull();
+});
+
+test('names the latest reply by its per-message profile', () => {
+  const root = item({ id: 'root', timestamp: 100 });
+  const reply = item({
+    id: 'reply',
+    timestamp: 300,
+    thread_root: '$root',
+    sender: '@bob:example.org',
+    sender_name: 'Bob',
+    per_message_profile: {
+      id: 'p',
+      display_name: 'Silver',
+      avatar_url: null,
+      pronouns: [],
+    } as unknown as PerMessageProfileView,
+  });
+
+  expect(collectForumThreads([root, reply], null)[0]?.lastSenderName).toBe('Silver');
 });

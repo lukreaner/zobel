@@ -1,4 +1,3 @@
-use crate::Core;
 use crate::protocol::{
     ImageSourcePackReferenceView, ImageSourcePackView, PackImageInfoView, RpcError,
 };
@@ -13,6 +12,7 @@ use matrix_sdk::ruma::events::room::message::{
 };
 use matrix_sdk::ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId};
 
+use crate::SignedIn;
 use crate::messages::outgoing_mentions;
 use crate::protocol::MessageKind;
 use sable_model::truncate::truncate_graphemes;
@@ -48,7 +48,7 @@ pub(crate) const fn reply_to(event_id: OwnedEventId, in_thread: bool, silent: bo
     }
 }
 
-impl Core {
+impl SignedIn {
     pub(crate) async fn with_reply(
         &self,
         room_id: &OwnedRoomId,
@@ -62,8 +62,7 @@ impl Core {
         };
         let event_id = reply.event_id.clone();
         match self
-            .room(room_id)
-            .await?
+            .room(room_id)?
             .make_reply_event(content.clone().into(), reply)
             .await
         {
@@ -71,7 +70,7 @@ impl Core {
             Err(ReplyError::StateEvent) => {
                 Ok(reply_relation_fallback(content, event_id, thread_root))
             }
-            Err(error) => Err(self.failed_with(label, &error)),
+            Err(error) => Err(self.core().failed_with(label, &error)),
         }
     }
 }
@@ -270,7 +269,7 @@ mod tests {
 
     #[test]
     fn a_silent_reply_carries_no_mention() {
-        let event_id = <&matrix_sdk::ruma::EventId>::try_from("$one:example.org")
+        let event_id = <&ruma::EventId>::try_from("$one:example.org")
             .expect("an event id")
             .to_owned();
 
@@ -283,7 +282,7 @@ mod tests {
 
     #[test]
     fn a_state_event_reply_keeps_the_relation_without_a_fallback() {
-        let event_id = <&matrix_sdk::ruma::EventId>::try_from("$state:example.org")
+        let event_id = <&ruma::EventId>::try_from("$state:example.org")
             .expect("an event id")
             .to_owned();
         let content = message_content(
@@ -322,7 +321,7 @@ mod tests {
     fn gifs_and_locations_without_mentions_send_an_empty_m_mentions() {
         let gif = gif_content(
             "dancing".to_owned(),
-            matrix_sdk::ruma::OwnedMxcUri::from("mxc://example.org/gif"),
+            ruma::OwnedMxcUri::from("mxc://example.org/gif"),
             super::ImageInfo::new(),
         );
         let location = location_content("here".to_owned(), "geo:48.8584,2.2945".to_owned());

@@ -25,7 +25,9 @@
   import Switch from '#lib/ui/primitives/Switch.svelte';
   import TextArea from '#lib/ui/primitives/TextArea.svelte';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
+  import { isComposingKey } from '#lib/ui/shortcuts/binding.js';
   import { holdUnsaved } from '#lib/ui/unsaved-guard.js';
+  import { VirtualWindow } from '#lib/ui/virtual-window.svelte.js';
   import { uprightImageBytes } from '#lib/ui/upright-jpeg.js';
 
   import {
@@ -45,6 +47,9 @@
   import { readImageInfo } from './read-image-info.js';
 
   import '#lib/ui/primitives/settings-row.css';
+
+  const ESTIMATED_ROW_HEIGHT = 56;
+  const OVERSCAN_ROWS = 8;
 
   interface PendingImage {
     file: File;
@@ -69,6 +74,7 @@
   let avatarUploading = $state(false);
   let failed = $state(false);
   let renaming = $state<string | null>(null);
+  let focused = $state<string | null>(null);
   let renameDraft = $state('');
   let bodyDraft = $state('');
   let pending = $state<PendingImage[]>([]);
@@ -83,6 +89,23 @@
     dirty ? invalidShortcode([...current.images, ...pending], saved.images) : null
   );
   let leaving = $state.raw<{ proceed: () => void; stay?: () => void } | null>(null);
+
+  const imageWindow = new VirtualWindow(() => ({
+    count: current.images.length,
+    key: (index) => current.images[index].shortcode,
+    estimate: ESTIMATED_ROW_HEIGHT,
+    overscan: OVERSCAN_ROWS,
+    keep: current.images.findIndex((image) => image.shortcode === (renaming ?? focused)),
+  }));
+
+  // The editor is hosted in several scroll areas, so the list finds the one around it.
+  function scrollAncestor(list: HTMLElement) {
+    let parent = list.parentElement;
+    while (parent && !/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+      parent = parent.parentElement;
+    }
+    return parent ? imageWindow.scroller(parent) : undefined;
+  }
 
   holdUnsaved({
     dirty: () => canEdit && dirty && leaving === null,
@@ -467,7 +490,8 @@
               disabled={busy}
               {@attach focusWhenAdded(entry.preview)}
               onkeydown={(event: KeyboardEvent) => {
-                if (event.key === 'Enter' && rejected === null) void apply();
+                if (event.key === 'Enter' && !isComposingKey(event) && rejected === null)
+                  void apply();
               }}
             />
             <IconButton
@@ -487,9 +511,26 @@
     {/if}
 
     {#if current.images.length > 0}
-      <ul class="settings-rows">
-        {#each current.images as image (image.shortcode)}
-          <SettingsRow title=":{image.shortcode}:" description={image.body ?? undefined}>
+      <ul
+        class="settings-rows"
+        style:padding-block="{imageWindow.spaceBefore}px {imageWindow.spaceAfter}px"
+        {@attach scrollAncestor}
+        {@attach imageWindow.start}
+      >
+        {#each imageWindow.items as { index } (current.images[index]?.shortcode)}
+          {@const image = current.images[index]}
+          <SettingsRow
+            title=":{image.shortcode}:"
+            description={image.body ?? undefined}
+            data-index={index}
+            onfocusin={() => {
+              focused = image.shortcode;
+            }}
+            onfocusout={() => {
+              focused = null;
+            }}
+            {@attach imageWindow.measure}
+          >
             {#snippet before()}
               <MediaImage
                 source={image.url}
@@ -525,7 +566,7 @@
                   bind:value={renameDraft}
                   aria-label={i18n.t('emotes.shortcode')}
                   onkeydown={(event: KeyboardEvent) => {
-                    if (event.key === 'Enter') {
+                    if (event.key === 'Enter' && !isComposingKey(event)) {
                       commitRename(image);
                       if (rejected === null) void apply();
                     }
@@ -537,7 +578,7 @@
                   aria-label={i18n.t('emotes.body')}
                   placeholder={i18n.t('emotes.body')}
                   onkeydown={(event: KeyboardEvent) => {
-                    if (event.key === 'Enter') {
+                    if (event.key === 'Enter' && !isComposingKey(event)) {
                       commitRename(image);
                       if (rejected === null) void apply();
                     }

@@ -22,6 +22,10 @@
   import AccountLocked from '#lib/features/sidebar/AccountLocked.svelte';
   import favicon from '#lib/assets/favicon.png';
   import { appName, faviconUrl } from '#lib/deployment/brand.js';
+  import {
+    setDeploymentThemeEnabled,
+    setDeploymentThemeKind,
+  } from '#lib/deployment/theme.svelte.js';
   import { trackKeyboardInset } from '#lib/platform/keyboard.js';
   import { blockEdgeNavigation } from '#lib/platform/edge-navigation.js';
   import { lockNativeZoom } from '#lib/platform/viewport-zoom.js';
@@ -217,17 +221,34 @@
     document.documentElement.dataset.blurMedia = preferences.blurMedia ? 'on' : 'off';
     document.documentElement.dataset.blurAvatars = preferences.blurAvatars ? 'on' : 'off';
     document.documentElement.dataset.blurEmotes = preferences.blurEmotes ? 'on' : 'off';
+    if (preferences.composerSpellcheck) document.documentElement.removeAttribute('spellcheck');
+    else document.documentElement.spellcheck = false;
+  });
+
+  $effect(() => {
+    setDeploymentThemeEnabled(preferences.deploymentTheme);
+  });
+
+  $effect(() => {
+    const saturation = preferences.saturation;
+    document.documentElement.style.setProperty(
+      '--app-saturation-filter',
+      saturation === 1 ? 'none' : `saturate(${String(saturation)})`
+    );
   });
 
   $effect(() => {
     const preview = themePreview.current;
     if (preview) {
       applyTheme(preview.kind, systemDark.current);
+      setDeploymentThemeKind(preview.kind);
       applyCustomTheme(preview.css);
       return;
     }
+    const kind = resolveTheme(preferences.theme, systemDark.current);
     applyTheme(preferences.theme, systemDark.current);
-    applyCustomTheme(activeCustomThemeCss(resolveTheme(preferences.theme, systemDark.current)));
+    setDeploymentThemeKind(kind);
+    applyCustomTheme(activeCustomThemeCss(kind));
   });
 
   $effect(() => {

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use matrix_sdk::RoomState;
 use matrix_sdk::ruma::events::message::TextContentBlock;
 use matrix_sdk::ruma::events::{AnyInitialStateEvent, AnyRoomAccountDataEvent, AnySyncStateEvent};
@@ -9,8 +7,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use serde_with::{DefaultOnError, serde_as};
 
+use crate::ResultExt;
+use crate::SignedIn;
 use crate::protocol::{CoreEvent, RoomRulesSettingsView, RoomRulesView, RpcError};
-use crate::{Core, ResultExt};
 
 /// MSC4534 is unmerged, so the unstable type is the one written. Both are read.
 pub(crate) const RULES_EVENTS: [&str; 2] = ["computer.gingershaped.msc4534.rules", "m.room.rules"];
@@ -62,6 +61,7 @@ fn view(
     source: &OwnedRoomId,
     content: Option<&Value>,
     accepted: Option<i64>,
+    updated_at: Option<u64>,
 ) -> Option<RoomRulesView> {
     let stored = read(content);
     let text = stored.rules?.text;
@@ -76,6 +76,7 @@ fn view(
         version: stored.version,
         require_acceptance: stored.require_acceptance,
         accepted: accepted.is_some_and(|accepted| accepted >= stored.version),
+        updated_at,
     })
 }
 
@@ -171,25 +172,26 @@ fn event_type<T>(raw: &Raw<T>) -> Option<String> {
     raw.get_field::<String>("type").ok().flatten()
 }
 
-impl Core {
-    async fn rules_content(&self, room_id: &OwnedRoomId) -> Result<Option<Value>, RpcError> {
+impl SignedIn {
+    async fn rules_event(
+        &self,
+        room_id: &OwnedRoomId,
+    ) -> Result<Option<(Value, Option<u64>)>, RpcError> {
         // Neither type is synced, so a room without rules costs a request for each on its first
         // open. Together they take one round trip instead of two.
         let read = |event_type: &str| {
-            self.room_state_event_content(room_id.clone(), event_type.to_owned(), String::new())
+            self.room_state_event(room_id.clone(), event_type.to_owned(), String::new())
         };
         let (unstable, stable) = tokio::join!(read(RULES_EVENTS[0]), read(RULES_EVENTS[1]));
-        unstable?.map_or(stable, |content| Ok(Some(content)))
+        unstable?.map_or(stable, |event| Ok(Some(event)))
+    }
+
+    async fn rules_content(&self, room_id: &OwnedRoomId) -> Result<Option<Value>, RpcError> {
+        Ok(self.rules_event(room_id).await?.map(|(content, _)| content))
     }
 
     async fn accepted_rules_version(&self, room_id: &OwnedRoomId) -> Result<Option<i64>, RpcError> {
-        let own_user = self.client().await?.user_id().map(ToOwned::to_owned);
-        let mut accepted = own_user.and_then(|user| {
-            self.accepted_rules
-                .lock()
-                .get(&(user, room_id.clone()))
-                .copied()
-        });
+        let mut accepted = self.state().accepted_rules.lock().get(room_id).copied();
         for event_type in ACCEPTED_EVENTS {
             let version = self
                 .room_document(room_id, event_type)
@@ -204,26 +206,26 @@ impl Core {
         &self,
         room_id: &OwnedRoomId,
     ) -> Result<Option<RoomRulesView>, RpcError> {
-        let own = self.rules_content(room_id).await?;
-        let client = self.client().await?;
-        let delegated = delegate(own.as_ref()).filter(|room| {
+        let own = self.rules_event(room_id).await?;
+        let client = self.client();
+        let delegated = delegate(own.as_ref().map(|(content, _)| content)).filter(|room| {
             room != room_id
                 && client
                     .get_room(room)
                     .is_some_and(|room| room.state() == RoomState::Joined)
         });
-        let (source, content) = match delegated {
+        let (source, event) = match delegated {
             Some(source) => {
-                let content = self.rules_content(&source).await?;
-                (source, content)
+                let event = self.rules_event(&source).await?;
+                (source, event)
             }
             None => (room_id.clone(), own),
         };
-        if content.is_none() {
+        let Some((content, updated_at)) = event else {
             return Ok(None);
-        }
+        };
         let accepted = self.accepted_rules_version(&source).await?;
-        Ok(view(&source, content.as_ref(), accepted))
+        Ok(view(&source, Some(&content), accepted, updated_at))
     }
 
     pub(crate) async fn accept_room_rules(
@@ -232,7 +234,7 @@ impl Core {
         version: i64,
     ) -> Result<(), RpcError> {
         const LABEL: &str = "accept_room_rules";
-        let _guard = self.account_data_lock.lock().await;
+        let _guard = self.state().account_data_writes.lock().await;
         if self
             .accepted_rules_version(&room_id)
             .await?
@@ -241,18 +243,13 @@ impl Core {
             return Ok(());
         }
         let raw = Raw::new(&json!({ "last_accepted_version": version }))
-            .or_failed(self, LABEL)?
+            .or_failed(self.core(), LABEL)?
             .cast_unchecked();
-        self.room(&room_id)
-            .await?
+        self.room(&room_id)?
             .set_account_data_raw(ACCEPTED_EVENTS[0].into(), raw)
             .await
-            .or_failed(self, LABEL)?;
-        if let Some(user) = self.client().await?.user_id() {
-            self.accepted_rules
-                .lock()
-                .insert((user.to_owned(), room_id), version);
-        }
+            .or_failed(self.core(), LABEL)?;
+        self.state().accepted_rules.lock().insert(room_id, version);
         Ok(())
     }
 
@@ -296,14 +293,12 @@ impl Core {
             }
         }
         self.copy_rules_to_delegates(&room_id, &content).await;
-        self.emit(CoreEvent::RoomRulesChanged { room_id });
+        self.core().emit(CoreEvent::RoomRulesChanged { room_id });
         Ok(())
     }
 
     async fn copy_rules_to_delegates(&self, source: &OwnedRoomId, content: &Value) {
-        let Ok(client) = self.client().await else {
-            return;
-        };
+        let client = self.client();
         let Some(own_user) = client.user_id().map(ToOwned::to_owned) else {
             return;
         };
@@ -311,6 +306,7 @@ impl Core {
             return;
         };
         let children = self
+            .core()
             .with_open_stores(async || crate::view::space_children(&space).await)
             .await
             .unwrap_or_default();
@@ -350,14 +346,15 @@ impl Core {
         }
     }
 
-    pub(crate) fn watch_room_rules(self: &Arc<Self>, client: &matrix_sdk::Client, generation: u64) {
+    pub(crate) fn watch_room_rules(&self, generation: u64) {
+        let client = self.client();
         let rules = client.add_event_handler({
             let core = self.clone();
             move |raw: Raw<AnySyncStateEvent>, room: matrix_sdk::Room| {
                 let core = core.clone();
                 async move {
                     if event_type(&raw).is_some_and(|kind| RULES_EVENTS.contains(&kind.as_str())) {
-                        core.emit_if_current(
+                        core.core().emit_if_current(
                             generation,
                             CoreEvent::RoomRulesChanged {
                                 room_id: room.room_id().to_owned(),
@@ -376,7 +373,7 @@ impl Core {
                 async move {
                     if event_type(&raw).is_some_and(|kind| ACCEPTED_EVENTS.contains(&kind.as_str()))
                     {
-                        core.emit_if_current(
+                        core.core().emit_if_current(
                             generation,
                             CoreEvent::RoomRulesChanged {
                                 room_id: room.room_id().to_owned(),
@@ -441,11 +438,17 @@ mod tests {
             )
             .await;
         let (core, _events) = signed_in_core(&server, client.clone()).await;
+        let session = core.signed_in().unwrap();
 
-        let alone = core.room_rules(&room_id.to_owned()).await.unwrap().unwrap();
+        let alone = session
+            .room_rules(&room_id.to_owned())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(alone.source_room_id, room_id);
         assert_eq!(alone.version, 1);
         assert!(!alone.accepted);
+        assert_eq!(alone.updated_at, Some(1));
 
         server
             .sync_room(
@@ -456,7 +459,11 @@ mod tests {
             )
             .await;
 
-        let delegated = core.room_rules(&room_id.to_owned()).await.unwrap().unwrap();
+        let delegated = session
+            .room_rules(&room_id.to_owned())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(delegated.source_room_id, space_id);
         assert_eq!(delegated.version, 7);
         assert!(delegated.accepted);
@@ -469,7 +476,8 @@ mod tests {
         let room_id = room_id!("!room:example.org");
         server.sync_joined_room(&client, room_id).await;
         let (core, mut events) = signed_in_core(&server, client.clone()).await;
-        core.watch_room_rules(&client, 1);
+        let session = core.signed_in().unwrap();
+        session.watch_room_rules(1);
 
         server
             .sync_room(
@@ -514,7 +522,11 @@ mod tests {
     #[test]
     fn rules_are_accepted_only_at_or_past_their_version() {
         let content = rules(3);
-        let accepted = |version| view(&room(), Some(&content), version).unwrap().accepted;
+        let accepted = |version| {
+            view(&room(), Some(&content), version, None)
+                .unwrap()
+                .accepted
+        };
 
         assert!(!accepted(None));
         assert!(!accepted(Some(2)));
@@ -524,12 +536,13 @@ mod tests {
 
     #[test]
     fn an_event_without_rules_is_no_rules() {
-        assert!(view(&room(), None, None).is_none());
-        assert!(view(&room(), Some(&json!({ "version": 2 })), None).is_none());
+        assert!(view(&room(), None, None, None).is_none());
+        assert!(view(&room(), Some(&json!({ "version": 2 })), None, None).is_none());
         assert!(
             view(
                 &room(),
                 Some(&json!({ "rules": { "m.text": [{ "body": "  " }] }, "version": 2 })),
+                None,
                 None
             )
             .is_none()
@@ -545,7 +558,7 @@ mod tests {
             ] },
             "version": 1,
         });
-        let html = view(&room(), Some(&content), None).unwrap().html;
+        let html = view(&room(), Some(&content), None, None).unwrap().html;
 
         assert!(html.contains("<b>Be kind</b>"));
         assert!(!html.contains("onerror"));
@@ -559,7 +572,7 @@ mod tests {
             "version": "three",
             "delegate_to": { "room": 7 },
         });
-        let view = view(&room(), Some(&content), None).unwrap();
+        let view = view(&room(), Some(&content), None, None).unwrap();
 
         assert!(!view.require_acceptance);
         assert_eq!(view.version, 0);
@@ -599,7 +612,7 @@ mod tests {
         let stored = edited(None, &change);
 
         for html in [
-            view(&room(), Some(&stored), None).unwrap().html,
+            view(&room(), Some(&stored), None, None).unwrap().html,
             settings(Some(&stored)).html,
         ] {
             for part in ["<h1>", "<ol>", "<strong>kind</strong>", "<blockquote>"] {
@@ -710,12 +723,18 @@ mod tests {
             .mount()
             .await;
         let (core, _events) = signed_in_core(&server, client.clone()).await;
+        let session = core.signed_in().unwrap();
 
-        core.set_room_rules(room_id.to_owned(), &edit("Be kind", false))
+        session
+            .set_room_rules(room_id.to_owned(), &edit("Be kind", false))
             .await
             .unwrap();
 
-        let view = core.room_rules(&room_id.to_owned()).await.unwrap().unwrap();
+        let view = session
+            .room_rules(&room_id.to_owned())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(view.require_acceptance);
         assert!(view.accepted);
     }

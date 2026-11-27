@@ -107,6 +107,10 @@ export type BotCommandParameter = {
 	default_value: ArgumentValue | null,
 	/**  `moe.sable.flag`: the option name the bot's own parser expects. */
 	flag: string | null,
+	/**  `moe.sable.multiline`: the value can span several lines. */
+	multiline: boolean,
+	/**  `moe.sable.prefill`: what the client fills in first, `environment` or `platform`. */
+	prefill: string | null,
 };
 
 export type BridgeView = {
@@ -262,6 +266,8 @@ export type CreateJoinRuleView = "public" | "invite" | "knock" | "restricted" | 
 export type DefaultNotificationModesView = {
 	direct: NotificationModeView,
 	group: NotificationModeView,
+	/**  The server has the MSC4563 rule. */
+	direct_rule: boolean,
 };
 
 export type DehydratedDeviceView = "unsupported" | "disabled" | "active" | "needs_recovery_key";
@@ -331,7 +337,8 @@ export type EmoteRecents = {
 };
 
 export type EmoteRecentsInput = {
-	recent: string[],
+	/**  Newest first. */
+	recent: RecentUse[],
 	frequent: string[],
 	images: PackImageView[],
 	unicode: boolean,
@@ -398,6 +405,7 @@ export type EventPreview = {
 	sender: string | null,
 	body: string | null,
 	fallback: ReplyFallbackView | null,
+	emotes: PreviewEmote[],
 };
 
 /**
@@ -409,6 +417,7 @@ export type FieldEdit = { kind: "keep" } | { kind: "clear" } | { kind: "set"; va
 export type ForwardedView = {
 	timestamp: number | null,
 	room_id: string | null,
+	room_name: string | null,
 	event_id: string | null,
 	sender: string | null,
 	content_valid: boolean | null,
@@ -426,6 +435,12 @@ export type GalleryAttachmentView = {
 export type GalleryItemView = { kind: "image"; filename: string; caption: string | null; source: string; mime: string | null; width: number | null; height: number | null; size: number | null; blurhash: string | null; thumbnail: string | null; spoiler: string | null } | { kind: "video"; filename: string; caption: string | null; source: string; mime: string | null; width: number | null; height: number | null; blurhash: string | null; thumbnail: string | null; spoiler: string | null } | { kind: "audio"; filename: string; caption: string | null; source: string; mime: string | null; duration_ms: number | null; waveform: number[] | null } | { kind: "file"; filename: string; caption: string | null; source: string; mime: string | null; size: number | null };
 
 export type GestureView = "hug" | "cuddle" | "wave" | "poke" | "headpat";
+
+export type GroupMemberView = {
+	user_id: string,
+	name: string | null,
+	avatar_url: string | null,
+};
 
 export type HierarchyRoom = {
 	room: HierarchyRoomView,
@@ -542,6 +557,7 @@ export type InboxItemView = {
 	sender: string,
 	sender_name: string | null,
 	body: string | null,
+	emotes: PreviewEmote[],
 	highlight: boolean,
 	is_direct: boolean,
 	encrypted: boolean,
@@ -551,6 +567,9 @@ export type InboxItemView = {
 };
 
 export type InviteAvatarsView = "on" | "off";
+
+/**  What became of the room's past messages when an invite went out. */
+export type InviteHistoryView = "shared" | "not_shared" | "failed";
 
 export type InviteTriageView = {
 	room_id: string,
@@ -614,11 +633,25 @@ export type KeywordNotificationView = {
 	mode: MentionNotificationModeView,
 };
 
+export type LatestEventKind = "text" | "image" | "video" | "audio" | "voice" | "file" | "sticker" | "location" | "poll";
+
 /**  Structured, so arranging and localising the preview stays with the UI. */
 export type LatestEventView = {
 	sender: string | null,
-	/**  Plain text: a list row must not run untrusted HTML. */
+	/**  Sent by this account, including a local echo. */
+	own: boolean,
+	/**
+	 *  Only in a room with more than two people, and never for `own`. A
+	 *  per-message profile name wins over the member's.
+	 */
+	sender_label: string | null,
+	kind: LatestEventKind,
+	/**
+	 *  Plain text: a list row must not run untrusted HTML. For a non-text
+	 *  `kind` this is the caption or poll question, empty when there is none.
+	 */
 	body: string,
+	emotes: PreviewEmote[],
 	timestamp: number | null,
 	sending: boolean,
 	event_id: string | null,
@@ -768,6 +801,7 @@ export type NotificationView = {
 	sender_name: string | null,
 	sender_avatar_url: string | null,
 	body: string,
+	emotes: PreviewEmote[],
 	mention: boolean,
 	noisy: boolean | null,
 };
@@ -1021,6 +1055,8 @@ export type PostView = {
 	url: string | null,
 	author: PostAuthorView,
 	text: string | null,
+	/**  The language code `text` was machine translated from. */
+	translated_from: string | null,
 	created_at: number | null,
 	media: PostMediaView[],
 	stats: PostStatsView | null,
@@ -1080,6 +1116,11 @@ export type PresenceSharingView = {
 export type PresenceUserSharingView = "allow" | "deny";
 
 export type PresenceView = "online" | "offline" | "unavailable" | "busy";
+
+export type PreviewEmote = {
+	alt: string,
+	source: string,
+};
 
 export type PrimitiveType = "string" | "integer" | "boolean" | "user_id" | "server_name" | "room_alias" | "room_id" | "event_id";
 
@@ -1180,10 +1221,12 @@ export type PushEventView = {
 	content: unknown,
 	sender: string,
 	sender_display_name: string | null,
+	sender_avatar_url: string | null,
 	room_name: string,
 	room_avatar_url: string | null,
 	encrypted: boolean,
 	noisy: boolean,
+	mention: boolean,
 };
 
 export type PushFetchView = { kind: "event"; event: PushEventView } | { kind: "discard" } | { kind: "unavailable" };
@@ -1241,6 +1284,13 @@ export type ReactionGroup = {
 export type ReactionShortcodeView = {
 	key: string,
 	shortcode: string,
+};
+
+export type RecentUse = {
+	key: string,
+	/**  Over the last thirty days. `total` breaks ties. */
+	uses: number,
+	total: number,
 };
 
 /**
@@ -1305,6 +1355,7 @@ export type ReplyView = {
 	body: string | null,
 	/**  Set instead of `body` when the replied-to event has none to show. */
 	fallback: ReplyFallbackView | null,
+	emotes: PreviewEmote[],
 };
 
 export type ResolvedQuery = {
@@ -1395,6 +1446,8 @@ export type RoomListItemView = {
 	space_children: SpaceChildEdge[],
 	/**  The network a bridge relays this room from, per its `m.bridge` state. */
 	bridge: BridgeView | null,
+	/**  The room's own MSC4278 level; `null` when the account's applies. */
+	media_previews: MediaPreviewsView | null,
 	unread: number,
 	notifying: number,
 	highlight: number,
@@ -1403,6 +1456,8 @@ export type RoomListItemView = {
 	/**  The counts above under the room's mode. */
 	counts: RoomUnreadView,
 	latest_event: LatestEventView | null,
+	/**  The people a direct room of several shows in place of an avatar it does not have. */
+	group_members: GroupMemberView[],
 };
 
 export type RoomListOptionsView = {
@@ -1414,6 +1469,8 @@ export type RoomListOptionsView = {
 	badge_default_group: BadgeModeView,
 	/**  A quiet space quiets everything under it. */
 	quiet_rooms: string[],
+	/**  Shows the unread dot even where the default or a quiet space would hide it. */
+	shown_rooms: string[],
 };
 
 export type RoomOpenView = {
@@ -1508,6 +1565,7 @@ export type RoomRulesView = {
 	version: number,
 	require_acceptance: boolean,
 	accepted: boolean,
+	updated_at: number | null,
 };
 
 /**  `key` is `home`, `unspaced`, `direct` or a space's room id. */
@@ -1535,7 +1593,7 @@ export type RoomSectionsUpdate = {
 	room_spaces: RoomSpacesView[] | null,
 };
 
-export type RoomSortView = "recent" | "name-asc" | "name-desc";
+export type RoomSortView = "recent" | "unread-first" | "name-asc" | "name-desc";
 
 /**  Where a room sits in the spaces this account has joined. */
 export type RoomSpacesView = {
@@ -1613,6 +1671,8 @@ export type RpcCode = { code: "not_logged_in" } | { code: "unknown_subscription"
 { code: "document_locked" } |
 /**  A key backup this device cannot unlock is already on the server. */
 { code: "backup_exists" } |
+/**  A key backup this device can read is turned off for the whole account (MSC4287). */
+{ code: "backup_paused" } |
 /**  Secret storage no longer matches the account's identity. */
 { code: "key_storage_out_of_sync" } |
 /**  Static: safe to hide UI. */
@@ -1736,6 +1796,8 @@ export type SearchHitView = {
 	sender: string,
 	origin_server_ts: number,
 	score: number,
+	/**  Words of `body` to highlight. */
+	matched: string[],
 	context_before: SearchContextView[],
 	context_after: SearchContextView[],
 };
@@ -1747,6 +1809,8 @@ export type SearchMetricsView = {
 	memory_bytes: number,
 	memory_budget: number,
 	disk_bytes: number,
+	disk_index_bytes: number,
+	disk_bookkeeping_bytes: number,
 	disk_budget: number,
 	rooms_joined: number,
 	rooms_indexed: number,
@@ -1754,7 +1818,6 @@ export type SearchMetricsView = {
 	rooms_exhausted: number,
 	rooms_failed: number,
 	rooms_blind: number,
-	rooms_unreadable: number,
 	events_crawled: number,
 	event_budget: number,
 	batches: number,
@@ -1912,7 +1975,12 @@ export type SessionInfo = {
 	needs_reauth: boolean,
 };
 
-export type ShareHistoryView = "shared" | "unencrypted" | "no_cross_signing" | "history_not_shared";
+export type ShareHistoryView = "shared" | "unencrypted" | "no_cross_signing" | "history_not_shared" | "not_invited" | "no_verified_devices" | "nothing_to_share";
+
+export type SharedByView = {
+	user_id: string,
+	name: string | null,
+};
 
 export type SidebarItemView = { kind: "space"; room_id: string } | { kind: "folder"; id: string; name: string | null; icon: string | null; content: string[] };
 
@@ -1935,7 +2003,7 @@ export type SlashInvocation = { command: "bug_report" } | { command: "gif_search
 /**  `formatted` is the composer's HTML for the text, still to be coloured. */
 { command: "rainbow"; body: string; msgtype: MessageKind; formatted: string | null } | { command: "html"; html: string } | { command: "join"; address: string; via: string[] } | { command: "knock"; address: string; via: string[]; reason: string | null } | { command: "leave" } | { command: "invite"; user_id: string } | { command: "share_history"; user_id: string } | { command: "kick"; targets: string[]; reason: string | null } | { command: "ban"; targets: string[]; reason: string | null } | { command: "unban"; user_id: string; reason: string | null } | { command: "display_name"; name: string } | { command: "member_look"; look: MemberLookEdit; in_parent_space: boolean } | { command: "pronouns"; pronouns: PronounView[]; in_parent_space: boolean } | { command: "room_name"; name: string } | { command: "topic"; topic: string } | { command: "disinvite"; user_ids: string[] } | { command: "ignore"; user_ids: string[] } | { command: "unignore"; user_ids: string[] } | { command: "start_dm"; user_ids: string[] } | { command: "convert_to_dm"; user_id: string | null } | { command: "convert_to_room" } | { command: "discard_session" } | { command: "acl"; allow: string[]; deny: string[]; remove_allow: string[]; remove_deny: string[] } | { command: "add_widget"; url: string; name: string } | { command: "location"; latitude: number; longitude: number } | { command: "share_my_location" } | { command: "add_persona"; id: string; name: string | null; avatar: string | null } | { command: "remove_persona"; id: string } | { command: "use_persona"; id: string; valid_until: number | null } | { command: "reset_persona" } | { command: "disable_room_personas" } | { command: "persona_proxy"; id: string; prefix: string | null; suffix: string | null } | { command: "raw_message"; content: { [key in string]: unknown } } | { command: "raw_event"; event_type: string; content: { [key in string]: unknown }; state_key: string | null } | { command: "raw_account_data"; event_type: string; content: { [key in string]: unknown } } | { command: "delete_account_data_key"; event_type: string; key: string } | { command: "bulk_redact"; targets: string[]; after_ts: number; event_types: string[]; reason: string | null };
 
-export type SlashParse = { kind: "none" } | { kind: "literal"; body: string } | { kind: "unknown"; name: string } | { kind: "usage"; name: string; developer_only: boolean } | { kind: "command"; name: string; developer_only: boolean; invocation: SlashInvocation };
+export type SlashParse = { kind: "none" } | { kind: "literal"; body: string; formatted: string | null } | { kind: "unknown"; name: string } | { kind: "usage"; name: string; developer_only: boolean } | { kind: "command"; name: string; developer_only: boolean; invocation: SlashInvocation };
 
 export type SpaceChildEdge = {
 	room_id: string,
@@ -1945,6 +2013,8 @@ export type SpaceChildEdge = {
 	origin_server_ts: number,
 	/**  The parent marked this child as worth surfacing first. */
 	suggested: boolean,
+	/**  Filed here by this account alone, so it has no route and is never written to space state. */
+	private: boolean,
 };
 
 /**
@@ -2050,7 +2120,24 @@ export type TermsPolicyView = {
 
 export type ThreadReadDiagnostics = {
 	root_event_id: string,
+	receipt_timestamp?: number | null,
 } & TimelineReadDiagnostics;
+
+export type ThreadRefView = {
+	room_id: string,
+	event_id: string,
+};
+
+export type ThreadReplyView = {
+	event_id: string,
+	sender: string,
+	timestamp: number,
+};
+
+export type ThreadSidebarView = {
+	pins: ThreadRefView[],
+	dismissed: ThreadRefView[],
+};
 
 export type ThreadSummaryView = {
 	/**  Excludes the root, so zero if every reply was redacted. */
@@ -2061,9 +2148,13 @@ export type ThreadSummaryView = {
 	 *  event.
 	 */
 	latest_event_id: string | null,
+	latest_timestamp: number | null,
+	latest_sender: string | null,
+	current_user_participated: boolean | null,
 	latest_body: string | null,
 	/**  What the latest reply was when it has no body to show. */
 	latest_fallback: ReplyFallbackView | null,
+	latest_emotes: PreviewEmote[],
 };
 
 export type TimelineFocusView = { kind: "live" } | { kind: "event"; event_id: string } | { kind: "thread"; root_event_id: string };
@@ -2195,6 +2286,8 @@ export type TimelineItemView = {
 	forwarded: ForwardedView | null,
 	forum_title: string | null,
 	shield: MessageShieldView | null,
+	/**  MSC4268: who sent the key bundle this message was decrypted with. */
+	shared_by: SharedByView | null,
 	/**
 	 *  MSC4293: shown as deleted because its sender was banned or kicked with
 	 *  `redact_events`. The content is still held locally.
@@ -2233,6 +2326,7 @@ export type UnreadDiagnosticsView = {
 	main: TimelineReadDiagnostics,
 	server_notifications: number,
 	server_highlights: number,
+	unthreaded_receipt_timestamp: number | null,
 	threads: ThreadReadDiagnostics[],
 };
 
@@ -2486,6 +2580,17 @@ export type Rpc = {
 	room_id: string,
 	dismissed: boolean,
 }) => Promise<string[]>;
+    threadSidebar: (params?: Record<string, never>) => Promise<ThreadSidebarView>;
+    setThreadPin: (params: {
+	room_id: string,
+	event_id: string,
+	pinned: boolean,
+}) => Promise<ThreadSidebarView>;
+    setThreadDismissed: (params: {
+	room_id: string,
+	event_id: string,
+	dismissed: boolean,
+}) => Promise<ThreadSidebarView>;
     bookmarks: (params?: Record<string, never>) => Promise<BookmarkView[]>;
     setBookmark: (params: {
 	room_id: string,
@@ -2689,6 +2794,11 @@ export type Rpc = {
 	passphrase?: string | null,
 	/**  Deletes the unreadable server backup and the history it holds. */
 	replace_backup?: boolean,
+	/**
+	 *  Turns the account's key backup back on. Without it, a backup the account paused ends
+	 *  the call with `backup_paused`.
+	 */
+	resume_backup?: boolean,
 }) => Promise<string>;
     resetRecoveryKey: (params: {
 	passphrase?: string | null,
@@ -2861,10 +2971,6 @@ export type Rpc = {
 }) => Promise<null>;
   };
   messages: {
-    markdownToContent: (params: {
-	markdown: string,
-	pills?: ComposerPill[],
-}) => Promise<ComposerContent>;
     send: (params: {
 	room_id: string,
 	body: string,
@@ -3069,6 +3175,14 @@ export type Rpc = {
 	service?: string | null,
 	tunnel?: boolean,
 }) => Promise<UrlPreviewView | null>;
+    preparePreviewImages: (params: {
+	room_id: string,
+	previews: UrlPreviewView[],
+}) => Promise<null>;
+    eventReactions: (params: {
+	room_id: string,
+	event_id: string,
+}) => Promise<ReactionGroup[]>;
     reactionShortcodes: (params: {
 	room_id: string,
 	event_id: string,
@@ -3092,9 +3206,21 @@ export type Rpc = {
     rememberEmoji: (params: {
 	key: string,
 }) => Promise<null>;
+    recentStickers: (params: {
+	sync: boolean,
+	legacy?: string[],
+	synced?: string[] | null,
+}) => Promise<RecentUse[]>;
+    rememberSticker: (params: {
+	key: string,
+	sync: boolean,
+}) => Promise<null>;
     setTyping: (params: {
 	room_id: string,
 	typing: boolean,
+}) => Promise<null>;
+    prepareToEncrypt: (params: {
+	room_id: string,
 }) => Promise<null>;
     mediaConfig: (params?: Record<string, never>) => Promise<{
 	upload_size: number,
@@ -3459,13 +3585,16 @@ export type Rpc = {
     viaServers: (params: {
 	room_id: string,
 }) => Promise<string[]>;
+    upgradeServers: (params: {
+	room_id: string,
+}) => Promise<string[]>;
     leave: (params: {
 	room_id: string,
 }) => Promise<null>;
     invite: (params: {
 	room_id: string,
 	user_id: string,
-}) => Promise<null>;
+}) => Promise<InviteHistoryView>;
     create: (params: {
 	name?: string | null,
 	topic: string | null,
@@ -3475,6 +3604,7 @@ export type Rpc = {
 	/**  Ignored for a space or a public room. */
 	encrypted: boolean,
 	invite: string[],
+	additional_creators?: string[],
 	/**  Adds an `m.space.child` edge from this space. */
 	parent_space?: string | null,
 	alias: string | null,
@@ -3583,10 +3713,14 @@ export type Rpc = {
 	limit: number,
 	offset: number,
 	context?: number,
-	older?: string | null,
+	/**
+	 *  The query's words as the platform's word segmenter cut them, which is
+	 *  where Chinese and Japanese are split. Without them each unspaced run is
+	 *  one word.
+	 */
+	words?: string[],
 }) => Promise<{
 	hits: SearchHitView[],
-	older: string | null,
 }>;
     coverage: (params?: Record<string, never>) => Promise<SearchCoverageView>;
     metrics: (params?: Record<string, never>) => Promise<SearchMetricsView>;
@@ -3618,8 +3752,10 @@ export type Rpc = {
     accessToken: (params?: Record<string, never>) => Promise<string | null>;
     openIdToken: (params?: Record<string, never>) => Promise<OpenIdTokenView>;
     syncStatus: (params?: Record<string, never>) => Promise<SyncStatus>;
+    retrySync: (params?: Record<string, never>) => Promise<null>;
     serverFeatures: (params?: Record<string, never>) => Promise<string[]>;
     delayedEventsSupported: (params?: Record<string, never>) => Promise<boolean>;
+    qrGrantSupported: (params?: Record<string, never>) => Promise<boolean>;
     setSearchOptions: (params: {
 	sharing: boolean,
 	disk_budget_mb: number,
@@ -3734,6 +3870,8 @@ export type Rpc = {
 	room_id: string,
 	event_id: string,
 	thread_root?: string | null,
+	/**  The timeline showing the event, since a linked message's context is not the live one. */
+	subscription?: SubscriptionId | null,
 }) => Promise<null>;
     eventItems: (params: {
 	room_id: string,
@@ -3755,10 +3893,16 @@ export type Rpc = {
     listThreads: (params: {
 	room_id: string,
 	from?: string | null,
+	participated?: boolean,
 }) => Promise<{
 	roots: TimelineItemView[],
 	next_batch: string | null,
 }>;
+    threadReplies: (params: {
+	room_id: string,
+	root_event_id: string,
+	limit?: number | null,
+}) => Promise<ThreadReplyView[]>;
     eventSource: (params: {
 	room_id: string,
 	event_id: string,
@@ -3898,6 +4042,9 @@ export type RpcMethods = {
   'account.search_user_directory': Rpc['account']['searchUserDirectory'];
   'account.dismissed_invites': Rpc['account']['dismissedInvites'];
   'account.set_invite_dismissed': Rpc['account']['setInviteDismissed'];
+  'account.thread_sidebar': Rpc['account']['threadSidebar'];
+  'account.set_thread_pin': Rpc['account']['setThreadPin'];
+  'account.set_thread_dismissed': Rpc['account']['setThreadDismissed'];
   'account.bookmarks': Rpc['account']['bookmarks'];
   'account.set_bookmark': Rpc['account']['setBookmark'];
   'account.media_preview_config': Rpc['account']['mediaPreviewConfig'];
@@ -3987,7 +4134,6 @@ export type RpcMethods = {
   'members.look': Rpc['members']['look'];
   'members.set_look': Rpc['members']['setLook'];
   'members.set_pronouns': Rpc['members']['setPronouns'];
-  'messages.markdown_to_content': Rpc['messages']['markdownToContent'];
   'messages.send': Rpc['messages']['send'];
   'messages.send_raw_event': Rpc['messages']['sendRawEvent'];
   'messages.send_redaction': Rpc['messages']['sendRedaction'];
@@ -4015,12 +4161,17 @@ export type RpcMethods = {
   'messages.end_poll': Rpc['messages']['endPoll'];
   'messages.send_gesture': Rpc['messages']['sendGesture'];
   'messages.url_preview': Rpc['messages']['urlPreview'];
+  'messages.prepare_preview_images': Rpc['messages']['preparePreviewImages'];
+  'messages.event_reactions': Rpc['messages']['eventReactions'];
   'messages.reaction_shortcodes': Rpc['messages']['reactionShortcodes'];
   'messages.reaction_event_ids': Rpc['messages']['reactionEventIds'];
   'messages.redact_reaction': Rpc['messages']['redactReaction'];
   'messages.frequent_reactions': Rpc['messages']['frequentReactions'];
   'messages.remember_emoji': Rpc['messages']['rememberEmoji'];
+  'messages.recent_stickers': Rpc['messages']['recentStickers'];
+  'messages.remember_sticker': Rpc['messages']['rememberSticker'];
   'messages.set_typing': Rpc['messages']['setTyping'];
+  'messages.prepare_to_encrypt': Rpc['messages']['prepareToEncrypt'];
   'messages.media_config': Rpc['messages']['mediaConfig'];
   'notifications.settings': Rpc['notifications']['settings'];
   'notifications.default_modes': Rpc['notifications']['defaultModes'];
@@ -4115,6 +4266,7 @@ export type RpcMethods = {
   'rooms.join': Rpc['rooms']['join'];
   'rooms.knock': Rpc['rooms']['knock'];
   'rooms.via_servers': Rpc['rooms']['viaServers'];
+  'rooms.upgrade_servers': Rpc['rooms']['upgradeServers'];
   'rooms.leave': Rpc['rooms']['leave'];
   'rooms.invite': Rpc['rooms']['invite'];
   'rooms.create': Rpc['rooms']['create'];
@@ -4155,8 +4307,10 @@ export type RpcMethods = {
   'session.access_token': Rpc['session']['accessToken'];
   'session.open_id_token': Rpc['session']['openIdToken'];
   'session.sync_status': Rpc['session']['syncStatus'];
+  'session.retry_sync': Rpc['session']['retrySync'];
   'session.server_features': Rpc['session']['serverFeatures'];
   'session.delayed_events_supported': Rpc['session']['delayedEventsSupported'];
+  'session.qr_grant_supported': Rpc['session']['qrGrantSupported'];
   'session.set_search_options': Rpc['session']['setSearchOptions'];
   'session.set_network_conditions': Rpc['session']['setNetworkConditions'];
   'session.set_app_in_foreground': Rpc['session']['setAppInForeground'];
@@ -4186,6 +4340,7 @@ export type RpcMethods = {
   'timeline.events': Rpc['timeline']['events'];
   'timeline.timestamp_to_event': Rpc['timeline']['timestampToEvent'];
   'timeline.list_threads': Rpc['timeline']['listThreads'];
+  'timeline.thread_replies': Rpc['timeline']['threadReplies'];
   'timeline.event_source': Rpc['timeline']['eventSource'];
   'timeline.unredacted_event': Rpc['timeline']['unredactedEvent'];
   'timeline.edit_history': Rpc['timeline']['editHistory'];
@@ -4246,6 +4401,9 @@ export function createRpc(call: RpcCall): Rpc {
       searchUserDirectory: (params) => call('account.search_user_directory', params) as ReturnType<Rpc['account']['searchUserDirectory']>,
       dismissedInvites: (params = {}) => call('account.dismissed_invites', params) as ReturnType<Rpc['account']['dismissedInvites']>,
       setInviteDismissed: (params) => call('account.set_invite_dismissed', params) as ReturnType<Rpc['account']['setInviteDismissed']>,
+      threadSidebar: (params = {}) => call('account.thread_sidebar', params) as ReturnType<Rpc['account']['threadSidebar']>,
+      setThreadPin: (params) => call('account.set_thread_pin', params) as ReturnType<Rpc['account']['setThreadPin']>,
+      setThreadDismissed: (params) => call('account.set_thread_dismissed', params) as ReturnType<Rpc['account']['setThreadDismissed']>,
       bookmarks: (params = {}) => call('account.bookmarks', params) as ReturnType<Rpc['account']['bookmarks']>,
       setBookmark: (params) => call('account.set_bookmark', params) as ReturnType<Rpc['account']['setBookmark']>,
       mediaPreviewConfig: (params) => call('account.media_preview_config', params) as ReturnType<Rpc['account']['mediaPreviewConfig']>,
@@ -4347,7 +4505,6 @@ export function createRpc(call: RpcCall): Rpc {
       setPronouns: (params) => call('members.set_pronouns', params) as ReturnType<Rpc['members']['setPronouns']>,
     },
     messages: {
-      markdownToContent: (params) => call('messages.markdown_to_content', params) as ReturnType<Rpc['messages']['markdownToContent']>,
       send: (params) => call('messages.send', params) as ReturnType<Rpc['messages']['send']>,
       sendRawEvent: (params) => call('messages.send_raw_event', params) as ReturnType<Rpc['messages']['sendRawEvent']>,
       sendRedaction: (params) => call('messages.send_redaction', params) as ReturnType<Rpc['messages']['sendRedaction']>,
@@ -4375,12 +4532,17 @@ export function createRpc(call: RpcCall): Rpc {
       endPoll: (params) => call('messages.end_poll', params) as ReturnType<Rpc['messages']['endPoll']>,
       sendGesture: (params) => call('messages.send_gesture', params) as ReturnType<Rpc['messages']['sendGesture']>,
       urlPreview: (params) => call('messages.url_preview', params) as ReturnType<Rpc['messages']['urlPreview']>,
+      preparePreviewImages: (params) => call('messages.prepare_preview_images', params) as ReturnType<Rpc['messages']['preparePreviewImages']>,
+      eventReactions: (params) => call('messages.event_reactions', params) as ReturnType<Rpc['messages']['eventReactions']>,
       reactionShortcodes: (params) => call('messages.reaction_shortcodes', params) as ReturnType<Rpc['messages']['reactionShortcodes']>,
       reactionEventIds: (params) => call('messages.reaction_event_ids', params) as ReturnType<Rpc['messages']['reactionEventIds']>,
       redactReaction: (params) => call('messages.redact_reaction', params) as ReturnType<Rpc['messages']['redactReaction']>,
       frequentReactions: (params) => call('messages.frequent_reactions', params) as ReturnType<Rpc['messages']['frequentReactions']>,
       rememberEmoji: (params) => call('messages.remember_emoji', params) as ReturnType<Rpc['messages']['rememberEmoji']>,
+      recentStickers: (params) => call('messages.recent_stickers', params) as ReturnType<Rpc['messages']['recentStickers']>,
+      rememberSticker: (params) => call('messages.remember_sticker', params) as ReturnType<Rpc['messages']['rememberSticker']>,
       setTyping: (params) => call('messages.set_typing', params) as ReturnType<Rpc['messages']['setTyping']>,
+      prepareToEncrypt: (params) => call('messages.prepare_to_encrypt', params) as ReturnType<Rpc['messages']['prepareToEncrypt']>,
       mediaConfig: (params = {}) => call('messages.media_config', params) as ReturnType<Rpc['messages']['mediaConfig']>,
     },
     notifications: {
@@ -4487,6 +4649,7 @@ export function createRpc(call: RpcCall): Rpc {
       join: (params) => call('rooms.join', params) as ReturnType<Rpc['rooms']['join']>,
       knock: (params) => call('rooms.knock', params) as ReturnType<Rpc['rooms']['knock']>,
       viaServers: (params) => call('rooms.via_servers', params) as ReturnType<Rpc['rooms']['viaServers']>,
+      upgradeServers: (params) => call('rooms.upgrade_servers', params) as ReturnType<Rpc['rooms']['upgradeServers']>,
       leave: (params) => call('rooms.leave', params) as ReturnType<Rpc['rooms']['leave']>,
       invite: (params) => call('rooms.invite', params) as ReturnType<Rpc['rooms']['invite']>,
       create: (params) => call('rooms.create', params) as ReturnType<Rpc['rooms']['create']>,
@@ -4533,8 +4696,10 @@ export function createRpc(call: RpcCall): Rpc {
       accessToken: (params = {}) => call('session.access_token', params) as ReturnType<Rpc['session']['accessToken']>,
       openIdToken: (params = {}) => call('session.open_id_token', params) as ReturnType<Rpc['session']['openIdToken']>,
       syncStatus: (params = {}) => call('session.sync_status', params) as ReturnType<Rpc['session']['syncStatus']>,
+      retrySync: (params = {}) => call('session.retry_sync', params) as ReturnType<Rpc['session']['retrySync']>,
       serverFeatures: (params = {}) => call('session.server_features', params) as ReturnType<Rpc['session']['serverFeatures']>,
       delayedEventsSupported: (params = {}) => call('session.delayed_events_supported', params) as ReturnType<Rpc['session']['delayedEventsSupported']>,
+      qrGrantSupported: (params = {}) => call('session.qr_grant_supported', params) as ReturnType<Rpc['session']['qrGrantSupported']>,
       setSearchOptions: (params) => call('session.set_search_options', params) as ReturnType<Rpc['session']['setSearchOptions']>,
       setNetworkConditions: (params) => call('session.set_network_conditions', params) as ReturnType<Rpc['session']['setNetworkConditions']>,
       setAppInForeground: (params) => call('session.set_app_in_foreground', params) as ReturnType<Rpc['session']['setAppInForeground']>,
@@ -4568,6 +4733,7 @@ export function createRpc(call: RpcCall): Rpc {
       events: (params) => call('timeline.events', params) as ReturnType<Rpc['timeline']['events']>,
       timestampToEvent: (params) => call('timeline.timestamp_to_event', params) as ReturnType<Rpc['timeline']['timestampToEvent']>,
       listThreads: (params) => call('timeline.list_threads', params) as ReturnType<Rpc['timeline']['listThreads']>,
+      threadReplies: (params) => call('timeline.thread_replies', params) as ReturnType<Rpc['timeline']['threadReplies']>,
       eventSource: (params) => call('timeline.event_source', params) as ReturnType<Rpc['timeline']['eventSource']>,
       unredactedEvent: (params) => call('timeline.unredacted_event', params) as ReturnType<Rpc['timeline']['unredactedEvent']>,
       editHistory: (params) => call('timeline.edit_history', params) as ReturnType<Rpc['timeline']['editHistory']>,

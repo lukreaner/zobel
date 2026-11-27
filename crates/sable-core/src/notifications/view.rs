@@ -3,7 +3,7 @@ use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
 use matrix_sdk::ruma::events::AnySyncTimelineEvent;
 use matrix_sdk::ruma::events::StateEventType;
 use matrix_sdk::ruma::events::TimelineEventType;
-use matrix_sdk::ruma::push::Action;
+use matrix_sdk::ruma::push::{Action, Ruleset};
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{EventId, MilliSecondsSinceUnixEpoch, OwnedUserId, RoomId};
 use matrix_sdk_ui::notification_client::{
@@ -12,6 +12,7 @@ use matrix_sdk_ui::notification_client::{
 };
 use sable_model::text::visible_name;
 
+use crate::nicknames::Nicknames;
 use crate::preview;
 use crate::protocol::{NotificationView, PushEventView, PushFetchView};
 
@@ -81,7 +82,9 @@ pub(super) async fn fetch_push_event_with(
             if event.sender_display_name.is_none() {
                 event.sender_display_name = Some(sender_name(client, room_id, &event.sender).await);
             }
-            PushFetchView::Event { event }
+            PushFetchView::Event {
+                event: Box::new(event),
+            }
         }
         Ok(NotificationStatus::EventFilteredOut | NotificationStatus::EventRedacted) => {
             PushFetchView::Discard
@@ -148,7 +151,8 @@ fn push_event_view(item: NotificationItem) -> Option<PushEventView> {
         RawNotificationEvent::Invite(raw) => raw.json().get(),
     };
     let mut event: serde_json::Value = serde_json::from_str(raw).ok()?;
-    let noisy = item.is_noisy == Some(true) || item.has_mention == Some(true);
+    let mention = item.has_mention == Some(true);
+    let noisy = item.is_noisy == Some(true) || mention;
     Some(PushEventView {
         event_type: event.get("type")?.as_str()?.to_owned(),
         content: event
@@ -157,18 +161,24 @@ fn push_event_view(item: NotificationItem) -> Option<PushEventView> {
             .unwrap_or_default(),
         sender: item.event.sender().to_string(),
         sender_display_name: item.sender_display_name.and_then(visible_name),
+        sender_avatar_url: item.sender_avatar_url,
         room_name: item.room_computed_display_name,
         room_avatar_url: item.room_avatar_url,
         encrypted: item.is_room_encrypted == Some(true),
         noisy,
+        mention,
     })
 }
 
 pub use crate::push_rules::notifies;
 
 #[must_use]
-pub fn uses_direct_push_rules(room: &matrix_sdk::Room) -> bool {
-    room.joined_members_count() == 2
+pub fn uses_direct_push_rules(rules: &Ruleset, room: &matrix_sdk::Room) -> bool {
+    crate::push_rules::direct_defaults(
+        rules,
+        room.direct_targets_length() != 0,
+        room.joined_members_count() == 2,
+    )
 }
 
 pub async fn every_encrypted_event_pushed(client: &Client) -> bool {
@@ -184,15 +194,19 @@ pub async fn notification(
     setup: NotificationProcessSetup,
     room_id: &RoomId,
     event_id: &EventId,
+    nicknames: &Nicknames,
 ) -> Option<NotificationView> {
     let notifications = NotificationClient::new(client.clone(), setup).await.ok()?;
 
     match related_notification(&notifications, client, room_id, event_id).await {
         Ok(NotificationStatus::Event(item)) if item.actions.as_deref().is_some_and(notifies) => {
+            let content = event_content(&item);
             let mut view = view(client.user_id()?.to_owned(), room_id, event_id, *item);
             if let Some(room) = client.get_room(room_id) {
                 apply_direct(&room, &mut view).await;
             }
+            nicknames.apply_notification(&mut view);
+            apply_per_message_profile(&mut view, content.as_ref());
             Some(view)
         }
         _ => None,
@@ -204,6 +218,7 @@ pub(crate) async fn foreground_notification(
     room: &matrix_sdk::Room,
     event_id: &EventId,
     discard_undecryptable: bool,
+    nicknames: &Nicknames,
 ) -> Option<NotificationView> {
     match notifications
         .get_notification_with_context(room.room_id(), event_id)
@@ -212,6 +227,7 @@ pub(crate) async fn foreground_notification(
         Ok(NotificationStatus::Event(item))
             if !(discard_undecryptable && still_encrypted(&item.event)) =>
         {
+            let content = event_content(&item);
             let mut view = view(
                 room.own_user_id().to_owned(),
                 room.room_id(),
@@ -219,9 +235,41 @@ pub(crate) async fn foreground_notification(
                 *item,
             );
             apply_direct(room, &mut view).await;
+            nicknames.apply_notification(&mut view);
+            apply_per_message_profile(&mut view, content.as_ref());
             Some(view)
         }
         _ => None,
+    }
+}
+
+fn event_content(item: &NotificationItem) -> Option<serde_json::Value> {
+    match &item.raw_event {
+        RawNotificationEvent::Timeline(raw) => raw.get_field("content").ok().flatten(),
+        RawNotificationEvent::Invite(_) => None,
+    }
+}
+
+/// A per-message profile's name and avatar win over the account's and a nickname, as in the
+/// timeline. A direct chat is presented as its sender, so it takes them too.
+fn apply_per_message_profile(view: &mut NotificationView, content: Option<&serde_json::Value>) {
+    let Some(profile) = crate::view::per_message_profile(content) else {
+        return;
+    };
+    if let Some(name) = profile.display_name {
+        if profile.has_fallback {
+            view.body = crate::matrix_html::strip_profile_fallback_body(&view.body, Some(&name));
+        }
+        if view.is_direct {
+            view.room_name.clone_from(&name);
+        }
+        view.sender_name = Some(name);
+    }
+    if let Some(avatar) = profile.avatar_url {
+        view.sender_avatar_url = (!avatar.is_empty()).then_some(avatar);
+        if view.is_direct {
+            view.room_avatar_url.clone_from(&view.sender_avatar_url);
+        }
     }
 }
 
@@ -282,6 +330,7 @@ pub(crate) async fn invite_notification(
             .as_ref()
             .and_then(|member| member.avatar_url().map(ToString::to_string)),
         body: "invited you".to_owned(),
+        emotes: Vec::new(),
         mention: actions.iter().any(Action::is_highlight),
         noisy: Some(actions.iter().any(|action| action.sound().is_some())),
     })
@@ -323,6 +372,10 @@ fn view(
         sender_name: item.sender_display_name.and_then(visible_name),
         sender_avatar_url: item.sender_avatar_url,
         body: body(&item.event),
+        emotes: match &item.event {
+            NotificationEvent::Invite(_) => Vec::new(),
+            NotificationEvent::Timeline(event) => preview::emotes(event.as_ref()),
+        },
         mention: item.has_mention.unwrap_or(false),
         noisy: item.is_noisy,
     }

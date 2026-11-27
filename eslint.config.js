@@ -41,12 +41,31 @@ export default defineConfig([
         { property: 'findLast', message: 'Needs Chrome 97; walk the array backwards.' },
         { property: 'findLastIndex', message: 'Needs Chrome 97; walk the array backwards.' },
         { object: 'Object', property: 'groupBy', message: 'Needs Chrome 117.' },
+        {
+          property: 'sender_name',
+          message: 'Use senderDisplayName() so a per-message profile name wins.',
+        },
       ],
       'no-alert': 'error',
       'no-restricted-imports': ['error', { paths: [PHOSPHOR_BARREL] }],
       'no-restricted-globals': [
         'error',
         { name: 'structuredClone', message: 'Needs Chrome 98; use a JSON round trip.' },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,svelte}'],
+    ignores: ['src/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            ":function:not(:has(CallExpression[callee.name='isComposingKey'])) BinaryExpression[left.property.name='key'][right.value='Enter']",
+          message:
+            'Return early on isComposingKey(event), or the Enter that confirms an IME candidate runs this too.',
+        },
       ],
     },
   },

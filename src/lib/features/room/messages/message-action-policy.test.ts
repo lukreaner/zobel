@@ -32,6 +32,7 @@ function item(overrides: Partial<TimelineItemView> = {}): TimelineItemView {
     per_message_profile: null,
     bundled_link_previews: [],
     link_previews_removed: null,
+    shared_by: null,
     redacted_on_ban: null,
     mention: 'none',
     forwarded: null,
@@ -80,7 +81,14 @@ test('local sends expose only actions that do not require a server event', () =>
 
 test('forwarded messages cannot be edited', () => {
   const actions = policy({
-    forwarded: { sender: null, content_valid: null, timestamp: 1, room_id: null, event_id: null },
+    forwarded: {
+      sender: null,
+      content_valid: null,
+      timestamp: 1,
+      room_id: null,
+      room_name: null,
+      event_id: null,
+    },
   });
 
   expect(actions.edit).toBe(false);
@@ -167,7 +175,14 @@ test('an attachment is not edited by someone else, nor once forwarded', () => {
   expect(
     policy({
       content,
-      forwarded: { sender: null, content_valid: null, timestamp: 1, room_id: null, event_id: null },
+      forwarded: {
+        sender: null,
+        content_valid: null,
+        timestamp: 1,
+        room_id: null,
+        room_name: null,
+        event_id: null,
+      },
     }).edit
   ).toBe(false);
 });

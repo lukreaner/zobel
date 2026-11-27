@@ -4,19 +4,18 @@
 
   import RoomOptionsMenu from './RoomOptionsMenu.svelte';
   import type { Component } from 'svelte';
-  import type { BridgeView, RoomListItemView } from '#src/generated/protocol';
+  import type { BridgeView, GroupMemberView, RoomListItemView } from '#src/generated/protocol';
   import { resolve } from '$app/paths';
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { i18n } from '#lib/i18n.js';
   import { isPlainClick } from '#lib/ui/plain-click.js';
   import { isRoomSwitch } from '#lib/features/room/room-navigation.js';
-  import { openFindOrJoin } from '#lib/ui/find-or-join-state.svelte.js';
   import { isBridgedSpace } from '#lib/rooms/bridged-spaces.svelte.js';
   import { findRoomByPathId, roomPathParam, useRoomList } from '#lib/rooms/room-list.svelte.js';
   import { addUnread } from '#lib/rooms/spaces.js';
   import type { UnreadCount } from '#lib/rooms/unread.js';
-  import { NO_UNREAD, roomUnread, type RoomUnread } from '#lib/rooms/unread.js';
+  import { NO_UNREAD, type RoomUnread } from '#lib/rooms/unread.js';
   import {
     folderName,
     mergeSpaces,
@@ -35,13 +34,11 @@
     isJoinedRoomPath,
     spaceNavigationHref,
   } from './space-paths.js';
-  import { preferences, setPreference } from '#lib/settings/preferences.svelte.js';
+  import { preferences } from '#lib/settings/preferences.svelte.js';
   import { cursorAnchor, type CursorAnchor } from '#lib/ui/cursor-anchor.js';
   import { createDragList, type DropState } from '#lib/ui/drag-list.js';
   import { longPress, mouseContextMenu } from '#lib/ui/long-press.svelte.js';
-  import ActionMenu from '#lib/ui/primitives/ActionMenu.svelte';
-  import ActionMenuItem from '#lib/ui/primitives/ActionMenuItem.svelte';
-  import ActionMenuSeparator from '#lib/ui/primitives/ActionMenuSeparator.svelte';
+  import { overlayScrollbar } from '#lib/ui/overlay-scrollbar.js';
   import Avatar from '#lib/ui/primitives/Avatar.svelte';
   import { toInitials } from '#lib/ui/primitives/initials.js';
   import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
@@ -50,19 +47,20 @@
   import { rovingFocus } from '#lib/ui/roving-focus.js';
   import '#lib/ui/primitives/nav-tab.css';
   import CaretUpIcon from 'phosphor-svelte/lib/CaretUpIcon';
-  import ChecksIcon from 'phosphor-svelte/lib/ChecksIcon';
-  import CompassIcon from 'phosphor-svelte/lib/CompassIcon';
-  import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpenIcon';
   import HashIcon from 'phosphor-svelte/lib/HashIcon';
   import HouseIcon from 'phosphor-svelte/lib/HouseIcon';
-  import ImageIcon from 'phosphor-svelte/lib/ImageIcon';
-  import LinkIcon from 'phosphor-svelte/lib/LinkIcon';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
-  import SpeakerHighIcon from 'phosphor-svelte/lib/SpeakerHighIcon';
-  import PencilSimpleIcon from 'phosphor-svelte/lib/PencilSimpleIcon';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
   import BridgeBadge from './BridgeBadge.svelte';
+  import GroupAvatar from './GroupAvatar.svelte';
+  import RailCallMark from './RailCallMark.svelte';
+  import RailCreateMenu from './RailCreateMenu.svelte';
+  import RailDisplayMenu from './RailDisplayMenu.svelte';
+  import RailFolderMenu from './RailFolderMenu.svelte';
+  import RailFolderTiles from './RailFolderTiles.svelte';
+  import RailSectionMenu from './RailSectionMenu.svelte';
+  import { unreadLabel } from './unread-label.js';
   import UserQuickTools from './UserQuickTools.svelte';
   import ResponsivePopover from '#lib/ui/primitives/ResponsivePopover.svelte';
   import AlertList, { alertListState } from './AlertList.svelte';
@@ -77,6 +75,7 @@
     icon?: Component;
     initial?: string;
     avatar?: string | null;
+    group?: GroupMemberView[];
     navigateHref?: string;
     unread?: UnreadCount;
     dm?: boolean;
@@ -99,7 +98,7 @@
     unspacedUnread?: UnreadCount;
     directRooms?: readonly RoomListItemView[];
     directUnread?: UnreadCount;
-    unreadFor?: RoomUnread;
+    unreadFor: RoomUnread;
     mobile?: boolean;
     compact?: boolean;
     onNavigate?: (href: string) => void;
@@ -129,7 +128,7 @@
     unspacedUnread = NO_UNREAD,
     directRooms = [],
     directUnread = NO_UNREAD,
-    unreadFor = roomUnread,
+    unreadFor,
     mobile = false,
     compact = false,
     onNavigate,
@@ -158,13 +157,6 @@
 
   function voiceId(key: string): string {
     return `${uid}-voice-${key}`;
-  }
-
-  function unreadLabel(count: UnreadCount | undefined): string | undefined {
-    if (!count) return undefined;
-    if (count.highlight > 0) return i18n.t('nav.unreadMentions', { count: count.highlight });
-    if (count.unread > 0) return i18n.t('nav.unreadMessages', { count: count.unread });
-    return count.marked ? i18n.t('nav.markedUnread') : undefined;
   }
 
   function describedBy(props: Record<string, unknown>, id: string): string {
@@ -249,6 +241,7 @@
         roomId: room.room_id,
         initial: toInitials(name),
         avatar: room.avatar_url,
+        group: room.group_members,
         label: name,
         unread: unreadFor(room),
         dm: true,
@@ -256,12 +249,6 @@
     })
   );
 
-  const createEntries = [
-    { href: resolve('create-room'), label: 'common.createRoom', icon: PlusIcon },
-    { href: resolve('create-space'), label: 'common.createSpace', icon: HouseIcon },
-    { href: null, label: 'nav.findOrJoin', icon: LinkIcon },
-    { href: resolve('explore'), label: 'nav.explore', icon: CompassIcon },
-  ] as const;
   let createOpen = $state(false);
   let createAnchor = $state.raw<HTMLElement | null>(null);
 
@@ -316,6 +303,7 @@
   }
 
   let alertListPopoverAnchor = $state.raw<HTMLElement | null>(null);
+  let railThumb = $state.raw<HTMLElement>();
 
   let displayAnchor = $state.raw<CursorAnchor | null>(null);
   let displayOpen = $state(false);
@@ -330,17 +318,7 @@
     displayOpen = true;
   }
 
-  const displayToggles = [
-    { key: 'showUnreadCounts', label: 'settings.showUnreadCounts' },
-    { key: 'badgeCountDMsOnly', label: 'settings.badgeCountDMsOnly' },
-    { key: 'showPingCounts', label: 'settings.showPingCounts' },
-  ] as const;
-  const viewToggles = [
-    { key: 'showHome', label: 'settings.showHome' },
-    { key: 'uniformIcons', label: 'settings.uniformIcons' },
-  ] as const;
-
-  let contextSpace = $state<RoomListItemView | null>(null);
+  let contextSpace = $state.raw<RoomListItemView | null>(null);
   let contextAnchor = $state.raw<CursorAnchor | null>(null);
   let contextOpen = $state(false);
   let sectionMenu = $state.raw<{ section: RailSection; unread: UnreadCount; dm: boolean } | null>(
@@ -608,6 +586,8 @@
 {#snippet itemBody(item: RailItem, active: boolean)}
   {#if item.icon}
     <span class="icon" aria-hidden="true"><item.icon weight={active ? 'fill' : 'regular'} /></span>
+  {:else if item.group && item.group.length > 0}
+    <GroupAvatar members={item.group} --group-avatar-size="var(--avatar-size-400)" />
   {:else}
     {@const avatar =
       item.space && item.roomId ? spacesById.get(item.roomId)?.display_avatar_url : item.avatar}
@@ -631,13 +611,9 @@
     {#if bridge}<BridgeBadge {bridge} />{/if}
   {/if}
   {#if item.space && item.roomId ? callSpaces.has(item.roomId) : item.inCall}
-    <span class="call-mark" aria-hidden="true"><SpeakerHighIcon weight="fill" /></span>
+    <RailCallMark />
   {:else if item.space && item.roomId && voiceSpaces.has(item.roomId)}
-    <span class="call-mark others" id={voiceId(item.roomId)}
-      ><SpeakerHighIcon aria-hidden="true" /><span class="screen-reader-only"
-        >{i18n.t('nav.voiceActive')}</span
-      ></span
-    >
+    <RailCallMark others id={voiceId(item.roomId)} />
   {/if}
 {/snippet}
 
@@ -777,22 +753,6 @@
   {/if}
 {/snippet}
 
-{#snippet folderTiles(folder: SidebarFolder)}
-  <span class="folder-tiles" aria-hidden="true">
-    {#each knownContent(folder) as roomId (roomId)}
-      {@const space = spacesById.get(roomId)}
-      <Avatar
-        class="folder-tile"
-        id={roomId}
-        src={space?.display_avatar_url}
-        name={spaceName(space?.name ?? null, roomId)}
-        size="small"
-        uniform
-      />
-    {/each}
-  </span>
-{/snippet}
-
 {#snippet folderButton(folder: SidebarFolder, props: Record<string, unknown>)}
   <button
     {...props}
@@ -818,7 +778,7 @@
         uniform
       />
     {:else}
-      {@render folderTiles(folder)}
+      <RailFolderTiles roomIds={knownContent(folder)} spaces={spacesById} />
     {/if}
     {@render unreadMark(folderUnread(folder), false, unreadId(folder.id))}
   </button>
@@ -870,11 +830,11 @@
     {@attach dropTarget(ref, false)}
   >
     <div class="folder-card">
-      <!-- svelte-ignore a11y_role_has_required_aria_props -->
       <button
         type="button"
         role="treeitem"
         aria-level="1"
+        aria-selected="false"
         aria-owns={`folder-children-${folder.id}`}
         class="folder-collapse"
         aria-expanded="true"
@@ -915,6 +875,7 @@
     aria-label={i18n.t('nav.navigation')}
     {@attach mobile ? noAttachment : monitor}
     {@attach rovingFocus({ tree: true })}
+    {@attach overlayScrollbar(railThumb)}
   >
     <ul class="rail-stack" role="presentation">
       {#each [...items, ...directItems] as item (item.roomId ?? item.href)}
@@ -960,6 +921,7 @@
       </li>
     </ul>
   </div>
+  <div class="rail-thumb" aria-hidden="true" bind:this={railThumb}></div>
   {#if !mobile && compact}
     {#if alertListPopoverAnchor}
       <ResponsivePopover
@@ -982,147 +944,40 @@
 </nav>
 
 {#if !mobile}
-  <ActionMenu
+  <RailDisplayMenu
     bind:open={displayOpen}
-    label={i18n.t('nav.displayOptions')}
-    class="rail-display-menu"
     anchor={displayAnchor}
-    side="right"
-    align="start"
-    preventScroll={false}
-  >
-    {#each displayToggles as toggle (toggle.key)}
-      {@const on = preferences[toggle.key]}
-      <ActionMenuItem
-        closeOnSelect={false}
-        checked={on}
-        onSelect={() => {
-          setPreference(toggle.key, !on);
-        }}
-      >
-        <span class="menu-check" aria-hidden="true">{on ? '✓' : ''}</span>
-        <span>{i18n.t(toggle.label)}</span>
-      </ActionMenuItem>
-    {/each}
-
-    <ActionMenuSeparator />
-
-    {#each viewToggles as toggle (toggle.key)}
-      {@const on = preferences[toggle.key]}
-      <ActionMenuItem
-        closeOnSelect={false}
-        checked={on}
-        onSelect={() => {
-          setPreference(toggle.key, !on);
-        }}
-      >
-        <span class="menu-check" aria-hidden="true">{on ? '✓' : ''}</span>
-        <span>{i18n.t(toggle.label)}</span>
-      </ActionMenuItem>
-    {/each}
-
-    {#if onCollapseFolders}
-      <ActionMenuSeparator />
-      <ActionMenuItem disabled={openFolders.size === 0} onSelect={onCollapseFolders}>
-        <span class="menu-check" aria-hidden="true"></span>
-        <span>{i18n.t('nav.folderCollapseAll')}</span>
-      </ActionMenuItem>
-    {/if}
-  </ActionMenu>
+    foldersOpen={openFolders.size > 0}
+    {onCollapseFolders}
+  />
 {/if}
 
-<ActionMenu
-  bind:open={createOpen}
-  label={i18n.t('nav.add')}
-  anchor={createAnchor}
-  side="right"
-  align="end"
->
-  {#each createEntries as entry (entry.label)}
-    <ActionMenuItem
-      onSelect={() => {
-        if (entry.href === null) openFindOrJoin();
-        else navigateTo(entry.href);
-      }}
-    >
-      <entry.icon />
-      {i18n.t(entry.label)}
-    </ActionMenuItem>
-  {/each}
-</ActionMenu>
+<RailCreateMenu bind:open={createOpen} anchor={createAnchor} onNavigate={navigateTo} />
 
 {#if sectionMenu}
   {@const menu = sectionMenu}
-  <ActionMenu
+  <RailSectionMenu
     bind:open={sectionOpen}
-    label={i18n.t('nav.listOptions')}
     anchor={sectionAnchor}
-    side="right"
-    align="start"
-  >
-    <ActionMenuItem
-      disabled={resolveUnreadBadge(menu.unread, preferences, menu.dm) === null}
-      onSelect={() => {
-        onMarkSectionRead?.(menu.section);
-      }}
-    >
-      <ChecksIcon />
-      {i18n.t('common.markAsRead')}
-    </ActionMenuItem>
-  </ActionMenu>
+    markReadDisabled={resolveUnreadBadge(menu.unread, preferences, menu.dm) === null}
+    onMarkRead={() => {
+      onMarkSectionRead?.(menu.section);
+    }}
+  />
 {/if}
 
 {#if folderMenu}
-  {@const folder = folderMenu}
-  <ActionMenu
+  <RailFolderMenu
     bind:open={folderOptionsOpen}
-    label={i18n.t('nav.listOptions')}
     anchor={folderAnchor}
-    side="right"
-    align="start"
-  >
-    <ActionMenuItem
-      onSelect={() => {
-        onMarkFolderRead?.(folder);
-      }}
-    >
-      <ChecksIcon />
-      {i18n.t('common.markAsRead')}
-    </ActionMenuItem>
-    <ActionMenuSeparator />
-    <ActionMenuItem
-      onSelect={() => {
-        onRenameFolder?.(folder);
-      }}
-    >
-      <PencilSimpleIcon />
-      {i18n.t('nav.folderRename')}
-    </ActionMenuItem>
-    {#if onChangeFolderIcon}
-      <ActionMenuItem
-        onSelect={() => {
-          onChangeFolderIcon(folder);
-        }}
-      >
-        <ImageIcon />
-        {i18n.t('nav.changeIcon')}
-      </ActionMenuItem>
-    {/if}
-    <ActionMenuItem
-      onSelect={() => {
-        onUngroupFolder?.(folder.id);
-      }}
-    >
-      <FolderOpenIcon />
-      {i18n.t('nav.folderUngroup')}
-    </ActionMenuItem>
-    {#if onCollapseFolders}
-      <ActionMenuItem disabled={openFolders.size === 0} onSelect={onCollapseFolders}>
-        <CaretUpIcon />
-        {i18n.t('nav.folderCollapseAll')}
-      </ActionMenuItem>
-    {/if}
-  </ActionMenu>
+    folder={folderMenu}
+    foldersOpen={openFolders.size > 0}
+    onMarkRead={onMarkFolderRead}
+    onRename={onRenameFolder}
+    onChangeIcon={onChangeFolderIcon}
+    onUngroup={onUngroupFolder}
+    {onCollapseFolders}
+  />
 {/if}
 
 {#if contextSpace}
@@ -1192,32 +1047,6 @@
     pointer-events: none;
   }
 
-  .call-mark {
-    align-items: center;
-    background: var(--success-main);
-    border: var(--border-width) solid var(--bg-container);
-    border-radius: var(--radii-pill);
-    color: var(--success-on-main);
-    display: flex;
-    inset-inline-end: -0.25rem;
-    justify-content: center;
-    padding: var(--space-050);
-    position: absolute;
-    top: -0.25rem;
-    z-index: 1;
-  }
-
-  .call-mark.others {
-    background: var(--bg-container);
-    border-color: var(--success-main);
-    color: var(--success-main);
-  }
-
-  .call-mark :global(svg) {
-    height: 0.625rem;
-    width: 0.625rem;
-  }
-
   .rail {
     background: var(--bg-container);
     border-inline-end: var(--border-width) solid var(--bg-container-line);
@@ -1227,6 +1056,7 @@
     flex: 0 0 var(--navigation-rail-width);
     flex-direction: column;
     min-height: 0;
+    position: relative;
     -webkit-touch-callout: none;
     user-select: none;
     width: var(--navigation-rail-width);
@@ -1236,6 +1066,15 @@
     flex: 1;
     min-height: 0;
     overflow: hidden auto;
+  }
+
+  .rail-thumb {
+    background: var(--surface-container-line);
+    border-radius: var(--radius-pill);
+    inset-block-start: 0;
+    inset-inline-end: calc(var(--border-width) * 2);
+    position: absolute;
+    width: calc(0.5rem - var(--border-width) * 4);
   }
 
   .rail-separator {
@@ -1321,19 +1160,9 @@
     padding: var(--space-100);
   }
 
-  .folder-tiles {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-050);
-    place-content: center;
-    width: 100%;
-  }
-
-  .folder-tiles :global(.folder-tile) {
-    --avatar-size: 1rem;
-
-    border-radius: var(--radii-300);
-    font-size: calc(var(--font-size-small) * 0.6);
+  .folder-preview :global(.avatar-root) {
+    aspect-ratio: 1;
+    height: auto;
   }
 
   .folder-open {

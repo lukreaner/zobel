@@ -10,7 +10,9 @@ vi.mock('@sentry/sveltekit', async () => {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   const sdk = (await import(
-    require.resolve('@sentry/browser', { paths: [require.resolve('@sentry/sveltekit')] })
+    require.resolve('@sentry/browser', {
+      paths: [require.resolve('@sentry/svelte', { paths: [require.resolve('@sentry/sveltekit')] })],
+    })
   )) as typeof import('@sentry/sveltekit');
   return {
     ...sdk,
@@ -34,6 +36,9 @@ vi.mock('#src/transport', async (importOriginal) => ({
   CoreError: class CoreError extends Error {},
 }));
 vi.mock('./worker/core.worker.ts?sharedworker&url', () => ({ default: 'core.worker.js' }));
+vi.mock('./transport/search-db-host', () => ({
+  createSearchDatabaseHost: () => ({ attach: vi.fn() }),
+}));
 vi.mock('#src/generated/wasm/sable_wasm_version.js', () => ({ default: 'test-wasm-version' }));
 
 afterEach(async () => {

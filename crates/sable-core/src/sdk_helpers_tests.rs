@@ -82,11 +82,12 @@ async fn preview_thumbnails_are_reuploaded_and_encrypted_for_encrypted_rooms() {
             .mount(server.server())
             .await;
         let core = core(&server, client).await;
+        let session = core.signed_in().unwrap();
         let preview = crate::link_previews::url_preview("https://example.org".to_owned(), &json!({
             "og:title": "Example", "og:image": "mxc://example.org/temporary", "og:image:type": "image/png",
         })).unwrap();
         let previews = [preview];
-        let images = core
+        let images = session
             .prepare_preview_images(&room_id.to_owned(), &previews)
             .await;
         let bundles =
@@ -160,6 +161,7 @@ async fn preview_thumbnail_failures_omit_images() {
             .mount(server.server())
             .await;
         let core = core(&server, client).await;
+        let session = core.signed_in().unwrap();
         let preview = crate::link_previews::url_preview(
             "https://example.org".to_owned(),
             &json!({
@@ -169,7 +171,7 @@ async fn preview_thumbnail_failures_omit_images() {
         )
         .unwrap();
         let previews = [preview];
-        let images = core
+        let images = session
             .prepare_preview_images(&room_id.to_owned(), &previews)
             .await;
         assert!(images.is_empty());
@@ -213,6 +215,7 @@ async fn post_photos_may_exceed_the_thumbnail_cap() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let preview = crate::link_previews::url_preview(
         "https://example.org".to_owned(),
         &json!({
@@ -221,7 +224,7 @@ async fn post_photos_may_exceed_the_thumbnail_cap() {
     )
     .unwrap();
     let previews = [preview];
-    let images = core
+    let images = session
         .prepare_preview_images(&room_id.to_owned(), &previews)
         .await;
     let bundles = crate::link_previews::bundled_link_previews(&previews, &images, true).unwrap();
@@ -854,13 +857,17 @@ async fn device_rename_updates_pusher_state() {
         .await;
     let sync_service = Arc::new(SyncService::builder(client.clone()).build().await.unwrap());
     let (core, mut events) = Core::new("rename-test", Box::new(MemorySessionStore::default()));
-    *core.session.write().await = Some(Session {
-        account_id: "test".into(),
-        client,
-        sync_service,
-        homeserver: server.uri(),
-        oauth: false,
-    });
+    crate::test_support::set_session(
+        &core,
+        Some(Session {
+            account_id: "test".into(),
+            client,
+            sync_service,
+            homeserver: server.uri(),
+            oauth: false,
+            state: Arc::default(),
+        }),
+    );
 
     core.run(RenameDeviceParams {
         device_id: device_id.clone(),
@@ -986,7 +993,7 @@ async fn healthy_space_summary_does_not_fetch_missing_tombstone_state() {
     let summary = crate::view::room_list_item(
         &item,
         &cache,
-        &matrix_sdk::ruma::push::Ruleset::new(),
+        &ruma::push::Ruleset::new(),
         &crate::nicknames::Nicknames::default(),
     );
     assert_eq!(summary.room_kind, Some(RoomKind::Space));
@@ -1051,8 +1058,6 @@ async fn unreadable_space_children_keep_the_last_edges() {
     assert_eq!(cache[room_id].children.len(), 2);
     assert!(cache[room_id].children_stale);
 }
-
-#[expect(clippy::unwrap_used, reason = "test code")]
 async fn space_client(server: &MatrixMockServer, store: &std::path::Path) -> matrix_sdk::Client {
     let client = server
         .client_builder()
@@ -1085,8 +1090,6 @@ async fn space_client(server: &MatrixMockServer, store: &std::path::Path) -> mat
         .await;
     client
 }
-
-#[expect(clippy::unwrap_used, reason = "test code")]
 async fn next_room_list_diff(
     events: &mut tokio::sync::mpsc::UnboundedReceiver<CoreEvent>,
     subscription: crate::protocol::SubscriptionId,
@@ -1410,7 +1413,7 @@ async fn a_local_read_does_not_wait_for_sync_to_start_or_stop() {
     let store = tempfile::tempdir().unwrap();
     let client = space_client(&server, store.path()).await;
     let core = core(&server, client.clone()).await;
-    let _starting_sync = core.activity.transition().await;
+    let _starting_sync = core.hold_supervisor().await;
 
     let read =
         core.with_open_stores(async || client.state_store().get_custom_value(b"missing").await);
@@ -1543,6 +1546,7 @@ async fn room_list_waits_for_stores_to_open() {
     let store = tempfile::tempdir().unwrap();
     let client = space_client(&server, store.path()).await;
     let (core, mut events) = core_with_events(&server, client.clone()).await;
+    let session = core.signed_in().unwrap();
     core.activity.set_stores_open(false);
     client.pause().await.unwrap();
 
@@ -1552,7 +1556,7 @@ async fn room_list_waits_for_stores_to_open() {
     });
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert!(!subscribing.is_finished());
-    assert!(core.push_rules.lock().await.is_none());
+    assert!(session.state().push_rules.lock().await.is_none());
 
     client.resume().await.unwrap();
     core.activity.set_stores_open(true);
@@ -1574,6 +1578,7 @@ async fn timeline_waits_for_stores_to_open() {
     server.sync_joined_room(&client, room_id).await;
     server.mock_room_state_encryption().plain().mount().await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     core.activity.set_stores_open(false);
 
     let pending = core.run(SubscribeParams {
@@ -1585,7 +1590,7 @@ async fn timeline_waits_for_stores_to_open() {
     tokio::time::timeout(std::time::Duration::from_millis(200), &mut pending)
         .await
         .expect_err("subscribing waits for the stores");
-    assert!(core.timelines.lock().await.is_empty());
+    assert!(session.state().timelines.lock().is_empty());
 
     core.activity.set_stores_open(true);
     let SubscribeOk { subscription, .. } =
@@ -1686,6 +1691,7 @@ async fn event_focus_clears_its_explicit_sync_subscription_after_unsubscribing()
         .mount()
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let SubscribeOk { subscription, .. } = core
         .run(SubscribeParams {
             room_id: room_id.to_owned(),
@@ -1701,7 +1707,7 @@ async fn event_focus_clears_its_explicit_sync_subscription_after_unsubscribing()
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"pos": "p1", "rooms": {}})))
         .mount(server.server())
         .await;
-    let sync = core.sync_service().await.unwrap();
+    let sync = session.sync_service();
     let room_list = sync.room_list_service();
     let stream = room_list.sync();
     futures_util::pin_mut!(stream);
@@ -1739,6 +1745,7 @@ async fn an_open_room_is_resubscribed_after_the_sync_session_expires() {
     server.sync_joined_room(&client, room_id).await;
     server.mock_room_state_encryption().plain().mount().await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     core.run(SubscribeParams {
         room_id: room_id.to_owned(),
         focus: TimelineFocusView::Live,
@@ -1751,10 +1758,10 @@ async fn an_open_room_is_resubscribed_after_the_sync_session_expires() {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"pos": "p1", "rooms": {}})))
         .mount(server.server())
         .await;
-    let sync = core.sync_service().await.unwrap();
+    let sync = session.sync_service();
     sync.expire_sessions().await;
 
-    core.resubscribe_timeline_rooms().await;
+    session.resubscribe_timeline_rooms().await;
     let room_list = sync.room_list_service();
     let stream = room_list.sync();
     futures_util::pin_mut!(stream);
@@ -1833,7 +1840,8 @@ async fn scheduled_listing_refreshes_credentials_and_omits_finalized_events() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
-    let messages = core.scheduled_messages(None).await.unwrap();
+    let session = core.signed_in().unwrap();
+    let messages = session.scheduled_messages(None).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].delay_id, "pending");
     assert_eq!(messages[0].body, "later");
@@ -1863,8 +1871,9 @@ async fn scheduled_attachments_keep_the_spoiler_on_the_wire() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    let delay_id = core
+    let delay_id = session
         .schedule_attachment(ScheduleAttachmentParams {
             room_id: room_id.to_owned(),
             filename: "a.png".to_owned(),
@@ -1945,8 +1954,9 @@ async fn updating_account_data_refuses_a_failed_or_malformed_server_read() {
         let client = server.client_builder().build().await;
         mount_document(&server, get, 0).await;
         let core = core(&server, client).await;
+        let session = core.signed_in().unwrap();
 
-        let result = core
+        let result = session
             .update_account_data(&[TEST_DOCUMENT], "test", async |_| {
                 Ok(Some(json!({ "a": 1 })))
             })
@@ -1968,8 +1978,9 @@ async fn updating_an_absent_account_document_starts_from_nothing() {
     )
     .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    let written = core
+    let written = session
         .update_account_data(&[TEST_DOCUMENT], "test", async |current| {
             assert!(current.is_none());
             Ok(Some(json!({ "a": 1 })))
@@ -2154,6 +2165,11 @@ async fn an_unencrypted_dm_request_reuses_an_unencrypted_dm() {
 async fn a_new_dm_makes_the_invitee_a_creator() {
     let server = MatrixMockServer::new().await;
     let client = server.client_builder().build().await;
+    Mock::given(method("GET"))
+        .and(path("/_matrix/client/v3/profile/@bob:example.org"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(server.server())
+        .await;
     Mock::given(method("POST"))
         .and(path("/_matrix/client/v3/createRoom"))
         .and(wiremock::matchers::body_partial_json(json!({
@@ -2166,7 +2182,7 @@ async fn a_new_dm_makes_the_invitee_a_creator() {
         .mount(server.server())
         .await;
     Mock::given(method("PUT"))
-        .and(wiremock::matchers::path_regex(r"/account_data/m\.direct$"))
+        .and(path_regex(r"/account_data/m\.direct$"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .mount(server.server())
         .await;
@@ -2195,7 +2211,7 @@ async fn a_dm_with_yourself_lists_no_other_creator_and_is_still_a_dm() {
         .mount(server.server())
         .await;
     Mock::given(method("GET"))
-        .and(wiremock::matchers::path_regex(r"/account_data/m\.direct$"))
+        .and(path_regex(r"/account_data/m\.direct$"))
         .respond_with(
             ResponseTemplate::new(404).set_body_json(
                 json!({"errcode": "M_NOT_FOUND", "error": "Account data not found"}),
@@ -2204,7 +2220,7 @@ async fn a_dm_with_yourself_lists_no_other_creator_and_is_still_a_dm() {
         .mount(server.server())
         .await;
     Mock::given(method("PUT"))
-        .and(wiremock::matchers::path_regex(r"/account_data/m\.direct$"))
+        .and(path_regex(r"/account_data/m\.direct$"))
         .and(wiremock::matchers::body_partial_json(
             json!({ own.as_str(): ["!notes:example.org"] }),
         ))
@@ -2263,6 +2279,39 @@ async fn memberships_follow_the_server_joined_rooms() {
 }
 
 #[tokio::test]
+async fn a_room_joined_by_sync_while_the_snapshot_was_out_stays_joined() {
+    use matrix_sdk::RoomState;
+
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let fresh = room_id!("!fresh:example.org");
+    Mock::given(method("GET"))
+        .and(path("/_matrix/client/v3/joined_rooms"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_millis(300))
+                .set_body_json(json!({"joined_rooms": []})),
+        )
+        .mount(server.server())
+        .await;
+
+    let reconcile = crate::rooms::reconcile_memberships(&client);
+    let sync = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(JoinedRoomBuilder::new(fresh));
+            })
+            .await;
+    };
+    let (reconciled, ()) = tokio::join!(reconcile, sync);
+    reconciled.unwrap();
+
+    assert_eq!(client.get_room(fresh).unwrap().state(), RoomState::Joined);
+}
+
+#[tokio::test]
 async fn our_own_membership_is_fetched_for_small_rooms_that_lack_it() {
     use matrix_sdk::ruma::events::room::member::{MembershipState, RoomMemberEventContent};
     use matrix_sdk_test::event_factory::EventFactory;
@@ -2280,7 +2329,7 @@ async fn our_own_membership_is_fetched_for_small_rooms_that_lack_it() {
                 .add_joined_room(JoinedRoomBuilder::new(large).set_joined_members_count(500));
         })
         .await;
-    let member: Raw<matrix_sdk::ruma::events::AnyStateEvent> = EventFactory::new()
+    let member: Raw<ruma::events::AnyStateEvent> = EventFactory::new()
         .room(direct)
         .event(RoomMemberEventContent::new(MembershipState::Join))
         .sender(&own)
@@ -2375,21 +2424,32 @@ async fn an_original_streams_with_progress_and_is_cached() {
         .await;
     let sync_service = Arc::new(SyncService::builder(client.clone()).build().await.unwrap());
     let (core, mut events) = Core::new("helpers-test", Box::new(MemorySessionStore::default()));
-    *core.session.write().await = Some(Session {
-        account_id: "test".into(),
-        client,
-        sync_service,
-        homeserver: server.server().uri(),
-        oauth: false,
-    });
+    crate::test_support::set_session(
+        &core,
+        Some(Session {
+            account_id: "test".into(),
+            client,
+            sync_service,
+            homeserver: server.server().uri(),
+            oauth: false,
+            state: Arc::default(),
+        }),
+    );
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/original".to_owned();
 
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         bytes
     );
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         bytes
     );
 
@@ -2425,8 +2485,8 @@ async fn an_encrypted_thumbnail_downloads_the_original() {
     let mut ciphertext = Vec::new();
     encryptor.read_to_end(&mut ciphertext).unwrap();
     let keys = encryptor.finish();
-    let file = matrix_sdk::ruma::events::room::EncryptedFile::new(
-        matrix_sdk::ruma::OwnedMxcUri::from("mxc://example.org/sealed"),
+    let file = ruma::events::room::EncryptedFile::new(
+        ruma::OwnedMxcUri::from("mxc://example.org/sealed"),
         keys.encryption_info,
         keys.hashes,
     );
@@ -2445,19 +2505,19 @@ async fn an_encrypted_thumbnail_downloads_the_original() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
-    let source = serde_json::to_string(&matrix_sdk::ruma::events::room::MediaSource::Encrypted(
-        Box::new(file),
-    ))
-    .unwrap();
+    let session = core.signed_in().unwrap();
+    let source =
+        serde_json::to_string(&ruma::events::room::MediaSource::Encrypted(Box::new(file))).unwrap();
 
     assert_eq!(
-        core.fetch_media(source.clone(), 800, 600, false)
+        session
+            .fetch_media(source.clone(), 800, 600, false)
             .await
             .unwrap(),
         plaintext
     );
     assert_eq!(
-        core.fetch_media(source, 0, 0, false).await.unwrap(),
+        session.fetch_media(source, 0, 0, false).await.unwrap(),
         plaintext
     );
 }
@@ -2484,7 +2544,7 @@ async fn corrupt_encrypted_media_is_rejected_before_returning_plaintext() {
     encryptor.read_to_end(&mut ciphertext).unwrap();
     let keys = encryptor.finish();
     ciphertext[0] ^= 1;
-    let file = matrix_sdk::ruma::events::room::EncryptedFile::new(
+    let file = ruma::events::room::EncryptedFile::new(
         "mxc://example.org/corrupt".into(),
         keys.encryption_info,
         keys.hashes,
@@ -2498,12 +2558,11 @@ async fn corrupt_encrypted_media_is_rejected_before_returning_plaintext() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
-    let source = serde_json::to_string(&matrix_sdk::ruma::events::room::MediaSource::Encrypted(
-        Box::new(file),
-    ))
-    .unwrap();
+    let session = core.signed_in().unwrap();
+    let source =
+        serde_json::to_string(&ruma::events::room::MediaSource::Encrypted(Box::new(file))).unwrap();
     assert!(matches!(
-        core.fetch_media(source, 0, 0, false).await,
+        session.fetch_media(source, 0, 0, false).await,
         Err(RpcError {
             code: RpcCode::Unavailable,
             ..
@@ -2539,9 +2598,10 @@ async fn sticker_previews_reuse_a_cached_original_without_retrying_thumbnails() 
         .mount(server.server())
         .await;
     let first = core(&server, client).await;
+    let first_session = first.signed_in().unwrap();
     let source = "mxc://example.org/sticker".to_owned();
     assert_eq!(
-        first
+        first_session
             .fetch_media(source.clone(), 144, 144, false)
             .await
             .unwrap(),
@@ -2556,10 +2616,11 @@ async fn sticker_previews_reuse_a_cached_original_without_retrying_thumbnails() 
         .build()
         .await;
     let restored = core(&server, client).await;
+    let restored_session = restored.signed_in().unwrap();
 
     for size in [144, 96, 48] {
         assert_eq!(
-            restored
+            restored_session
                 .fetch_media(source.clone(), size, size, false)
                 .await
                 .unwrap(),
@@ -2597,16 +2658,17 @@ async fn sticker_previews_prefer_the_persisted_thumbnail_over_the_original() {
         .mount(server.server())
         .await;
     let first = core(&server, client).await;
+    let first_session = first.signed_in().unwrap();
     let source = "mxc://example.org/preview".to_owned();
     assert_eq!(
-        first
+        first_session
             .fetch_media(source.clone(), 144, 144, false)
             .await
             .unwrap(),
         thumbnail
     );
     assert_eq!(
-        first
+        first_session
             .fetch_media(source.clone(), 0, 0, false)
             .await
             .unwrap(),
@@ -2621,15 +2683,19 @@ async fn sticker_previews_prefer_the_persisted_thumbnail_over_the_original() {
         .build()
         .await;
     let restored = core(&server, client).await;
+    let restored_session = restored.signed_in().unwrap();
     assert_eq!(
-        restored
+        restored_session
             .fetch_media(source.clone(), 144, 144, false)
             .await
             .unwrap(),
         thumbnail
     );
     assert_eq!(
-        restored.fetch_media(source, 48, 48, false).await.unwrap(),
+        restored_session
+            .fetch_media(source, 48, 48, false)
+            .await
+            .unwrap(),
         original
     );
 }
@@ -2666,17 +2732,22 @@ async fn cached_sticker_reads_bypass_six_stalled_downloads() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/cached-sticker".to_owned();
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         bytes
     );
 
     let downloads = (0..=crate::media::MAX_MEDIA_DOWNLOADS)
         .map(|index| {
-            let core = core.clone();
+            let session = session.clone();
             tokio::spawn(async move {
-                core.fetch_media(format!("mxc://example.org/stalled-{index}"), 0, 0, false)
+                session
+                    .fetch_media(format!("mxc://example.org/stalled-{index}"), 0, 0, false)
                     .await
             })
         })
@@ -2701,7 +2772,7 @@ async fn cached_sticker_reads_bypass_six_stalled_downloads() {
         assert_eq!(core.media_downloads.available_permits(), 0);
         tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            core.fetch_media(source, 144, 144, false),
+            session.fetch_media(source, 144, 144, false),
         )
         .await
     }
@@ -2743,13 +2814,17 @@ async fn large_cached_photos_do_not_replace_plain_thumbnails() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/photo".to_owned();
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         original
     );
     for (width, height) in [(800, 600), (144, 144), (800, 600)] {
-        let preview = core
+        let preview = session
             .fetch_media(source.clone(), width, height, false)
             .await
             .unwrap();
@@ -2757,7 +2832,7 @@ async fn large_cached_photos_do_not_replace_plain_thumbnails() {
         assert_eq!(preview, thumbnail);
     }
     assert_eq!(
-        core.fetch_media(source, 0, 0, false).await.unwrap(),
+        session.fetch_media(source, 0, 0, false).await.unwrap(),
         original
     );
 }
@@ -2788,11 +2863,13 @@ async fn bulk_original_downloads_leave_all_preview_slots_available() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let downloads = (0..4)
         .map(|index| {
-            let core = core.clone();
+            let session = session.clone();
             tokio::spawn(async move {
-                core.fetch_media(format!("mxc://example.org/export-{index}"), 0, 0, true)
+                session
+                    .fetch_media(format!("mxc://example.org/export-{index}"), 0, 0, true)
                     .await
             })
         })
@@ -2816,7 +2893,7 @@ async fn bulk_original_downloads_leave_all_preview_slots_available() {
     let slots = core.media_downloads.available_permits();
     let visible = tokio::time::timeout(
         std::time::Duration::from_secs(1),
-        core.fetch_media("mxc://example.org/visible".to_owned(), 144, 144, false),
+        session.fetch_media("mxc://example.org/visible".to_owned(), 144, 144, false),
     )
     .await;
     for download in &downloads {
@@ -2853,17 +2930,21 @@ async fn queued_previews_recheck_the_original_cache() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let slots = core
         .media_downloads
         .acquire_many(u32::try_from(crate::media::MAX_MEDIA_DOWNLOADS).unwrap())
         .await
         .unwrap();
     let source = "mxc://example.org/queued".to_owned();
-    let mut preview = Box::pin(core.fetch_media(source.clone(), 144, 144, false));
+    let mut preview = Box::pin(session.fetch_media(source.clone(), 144, 144, false));
     tokio::time::timeout(std::time::Duration::from_millis(50), &mut preview)
         .await
         .unwrap_err();
-    assert_eq!(core.fetch_media(source, 0, 0, true).await.unwrap(), bytes);
+    assert_eq!(
+        session.fetch_media(source, 0, 0, true).await.unwrap(),
+        bytes
+    );
     drop(slots);
     assert_eq!(
         tokio::time::timeout(std::time::Duration::from_secs(1), preview)
@@ -2899,9 +2980,11 @@ async fn a_transient_download_failure_is_retried() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     assert_eq!(
-        core.fetch_media("mxc://example.org/blip".to_owned(), 0, 0, false)
+        session
+            .fetch_media("mxc://example.org/blip".to_owned(), 0, 0, false)
             .await
             .unwrap(),
         bytes
@@ -2932,9 +3015,11 @@ async fn a_refused_authenticated_download_falls_back_to_the_legacy_endpoint() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     assert_eq!(
-        core.fetch_media("mxc://example.org/legacy-only".to_owned(), 0, 0, false)
+        session
+            .fetch_media("mxc://example.org/legacy-only".to_owned(), 0, 0, false)
             .await
             .unwrap(),
         bytes
@@ -2961,12 +3046,19 @@ async fn legacy_original_downloads_can_take_longer_than_thirty_seconds() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/slow".to_owned();
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         bytes
     );
-    assert_eq!(core.fetch_media(source, 0, 0, false).await.unwrap(), bytes);
+    assert_eq!(
+        session.fetch_media(source, 0, 0, false).await.unwrap(),
+        bytes
+    );
 }
 
 #[tokio::test]
@@ -3002,12 +3094,19 @@ async fn sdk_original_retry_can_take_longer_than_thirty_seconds() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/slow-retry".to_owned();
     assert_eq!(
-        core.fetch_media(source.clone(), 0, 0, false).await.unwrap(),
+        session
+            .fetch_media(source.clone(), 0, 0, false)
+            .await
+            .unwrap(),
         bytes
     );
-    assert_eq!(core.fetch_media(source, 0, 0, false).await.unwrap(), bytes);
+    assert_eq!(
+        session.fetch_media(source, 0, 0, false).await.unwrap(),
+        bytes
+    );
 }
 
 #[tokio::test]
@@ -3035,10 +3134,12 @@ async fn a_server_whose_media_keeps_failing_is_refused_without_a_request() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     for id in ["one", "two", "three"] {
         assert!(matches!(
-            core.fetch_media(format!("mxc://dead.example/{id}"), 64, 64, false)
+            session
+                .fetch_media(format!("mxc://dead.example/{id}"), 64, 64, false)
                 .await,
             Err(RpcError {
                 code: RpcCode::Unavailable,
@@ -3048,7 +3149,7 @@ async fn a_server_whose_media_keeps_failing_is_refused_without_a_request() {
     }
 
     assert!(matches!(
-        core.fetch_media("mxc://dead.example/four".to_owned(), 64, 64, false)
+        session.fetch_media("mxc://dead.example/four".to_owned(), 64, 64, false)
             .await,
         Err(RpcError { code: RpcCode::MediaServerUnavailable { retry_after_ms }, .. }) if retry_after_ms > 0
     ));
@@ -3078,18 +3179,22 @@ async fn a_refused_server_still_serves_what_is_cached() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    core.fetch_media("mxc://dead.example/kept".to_owned(), 0, 0, false)
+    session
+        .fetch_media("mxc://dead.example/kept".to_owned(), 0, 0, false)
         .await
         .unwrap();
     for id in ["gone1", "gone2", "gone3"] {
-        core.fetch_media(format!("mxc://dead.example/{id}"), 0, 0, false)
+        session
+            .fetch_media(format!("mxc://dead.example/{id}"), 0, 0, false)
             .await
             .unwrap_err();
     }
 
     assert_eq!(
-        core.fetch_media("mxc://dead.example/kept".to_owned(), 0, 0, false)
+        session
+            .fetch_media("mxc://dead.example/kept".to_owned(), 0, 0, false)
             .await
             .unwrap(),
         bytes
@@ -3113,10 +3218,12 @@ async fn forbidden_media_never_opens_the_circuit() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     for id in ["a", "b", "c", "d"] {
         assert!(matches!(
-            core.fetch_media(format!("mxc://policy.example/{id}"), 0, 0, false)
+            session
+                .fetch_media(format!("mxc://policy.example/{id}"), 0, 0, false)
                 .await,
             Err(RpcError {
                 code: RpcCode::Unavailable,
@@ -3149,10 +3256,12 @@ async fn missing_media_never_opens_the_circuit() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     for id in ["a", "b", "c", "d"] {
         assert!(matches!(
-            core.fetch_media(format!("mxc://gone.example/{id}"), 0, 0, false)
+            session
+                .fetch_media(format!("mxc://gone.example/{id}"), 0, 0, false)
                 .await,
             Err(RpcError {
                 code: RpcCode::MediaNotFound,
@@ -3160,7 +3269,8 @@ async fn missing_media_never_opens_the_circuit() {
             })
         ));
     }
-    core.fetch_media("mxc://gone.example/ok".to_owned(), 0, 0, false)
+    session
+        .fetch_media("mxc://gone.example/ok".to_owned(), 0, 0, false)
         .await
         .unwrap();
 }
@@ -3182,15 +3292,20 @@ async fn forgotten_media_is_fetched_again() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
     let source = "mxc://example.org/forgotten".to_owned();
 
-    core.fetch_media(source.clone(), 0, 0, false).await.unwrap();
-    core.fetch_media(source.clone(), 0, 0, false).await.unwrap();
-    core.forget_media(source.clone()).await.unwrap();
-    core.fetch_media(source, 0, 0, false).await.unwrap();
+    session
+        .fetch_media(source.clone(), 0, 0, false)
+        .await
+        .unwrap();
+    session
+        .fetch_media(source.clone(), 0, 0, false)
+        .await
+        .unwrap();
+    session.forget_media(source.clone()).await.unwrap();
+    session.fetch_media(source, 0, 0, false).await.unwrap();
 }
-
-#[expect(clippy::unwrap_used, reason = "test code")]
 async fn space_child_writes(
     child: Option<serde_json::Value>,
     command: impl Handler,
@@ -3210,8 +3325,11 @@ async fn space_child_writes(
         );
     }
     server.sync_room(&client, space).await;
+    server
+        .sync_joined_room(&client, room_id!("!child:example.org"))
+        .await;
     Mock::given(method("PUT"))
-        .and(wiremock::matchers::path_regex(
+        .and(path_regex(
             r"^/_matrix/client/v3/rooms/[^/]+/state/m\.space\.child/",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"event_id": "$written"})))
@@ -3352,18 +3470,19 @@ async fn reordering_a_parent_claim_creates_the_child_edge() {
 
 #[tokio::test]
 async fn forgetting_an_invalid_uri_is_refused() {
-    let (core, _events) = Core::new("helpers-test", Box::new(MemorySessionStore::default()));
+    let server = MatrixMockServer::new().await;
+    let (core, _events) =
+        crate::test_support::signed_in_core(&server, server.client_builder().build().await).await;
+    let session = core.signed_in().unwrap();
 
     assert!(matches!(
-        core.forget_media("not-a-uri".to_owned()).await,
+        session.forget_media("not-a-uri".to_owned()).await,
         Err(RpcError {
             code: RpcCode::InvalidMedia,
             ..
         })
     ));
 }
-
-#[expect(clippy::unwrap_used, reason = "test code")]
 async fn sync_secret_storage_key(
     server: &MatrixMockServer,
     client: &matrix_sdk::Client,
@@ -3747,7 +3866,8 @@ async fn account_data_types_survive_a_restart_and_include_stored_known_types() {
         .await;
 
     let before = core(&server, client.clone()).await;
-    before
+    let before_session = before.signed_in().unwrap();
+    before_session
         .remember_account_data_type("org.example.custom")
         .await;
 
@@ -3795,8 +3915,6 @@ async fn account_data_types_include_what_the_server_lists_but_sync_never_deliver
             .any(|event_type| event_type == "org.example.legacy")
     );
 }
-
-#[expect(clippy::unwrap_used, reason = "test code")]
 async fn last_put_body(server: &MatrixMockServer, event_type: &str) -> serde_json::Value {
     let requests = server.server().received_requests().await.unwrap();
     let request = requests
@@ -3849,6 +3967,7 @@ async fn recovery_adopts_an_account_data_key_that_seals_our_documents() {
         .mount(server.server())
         .await;
     let core = core(&server, client.clone()).await;
+    let session = core.signed_in().unwrap();
 
     assert!(matches!(
         core.run(crate::api::account::SetSealedDataParams {
@@ -3862,7 +3981,7 @@ async fn recovery_adopts_an_account_data_key_that_seals_our_documents() {
         })
     ));
 
-    core.adopt_account_data_key(&client, &key.to_base58()).await;
+    session.adopt_account_data_key(&key.to_base58()).await;
 
     assert!(cached_key(&client).await.is_some());
     let stored = last_put_body(&server, ADK_SECRET).await;
@@ -3899,30 +4018,6 @@ async fn recovery_adopts_an_account_data_key_that_seals_our_documents() {
     assert_eq!(document.state, SealStateView::Sealed);
     assert_eq!(document.content, Some(draft));
     assert!(document.can_seal);
-}
-
-#[tokio::test]
-async fn markdown_to_content_needs_no_session() {
-    use crate::protocol::ComposerPill;
-
-    let (core, _events) = Core::new("markdown-test", Box::new(MemorySessionStore::default()));
-    let content = core
-        .run(crate::api::messages::MarkdownToContentParams {
-            markdown: "**hi** \u{FFFC}".to_owned(),
-            pills: vec![ComposerPill::Mention {
-                user_id: "@ana:example.org".to_owned(),
-                name: "Ana".to_owned(),
-                via: Vec::new(),
-            }],
-        })
-        .await
-        .unwrap();
-    assert_eq!(content.body, "**hi** Ana");
-    assert_eq!(
-        content.formatted_body.as_deref(),
-        Some("<strong>hi</strong> <a href=\"https://matrix.to/#/@ana:example.org\">Ana</a>")
-    );
-    assert_eq!(content.mentions.user_ids, ["@ana:example.org"]);
 }
 
 /// An account-data event the server stores, served back slowly enough that two
@@ -4035,6 +4130,34 @@ async fn server_features_lists_only_enabled_unstable_features() {
     );
 }
 
+#[tokio::test]
+async fn qr_grant_needs_a_rendezvous_server() {
+    for (features, supported) in [
+        (json!({"org.matrix.msc4108": true}), true),
+        (json!({"org.matrix.msc4108": false}), false),
+        (json!({}), false),
+    ] {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().no_server_versions().build().await;
+        Mock::given(method("GET"))
+            .and(path("/_matrix/client/versions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"versions": ["v1.19"], "unstable_features": features})),
+            )
+            .mount(server.server())
+            .await;
+        let core = core(&server, client).await;
+        assert_eq!(
+            core.run(crate::api::session::QrGrantSupportedParams {})
+                .await
+                .ok(),
+            Some(supported),
+            "{features}"
+        );
+    }
+}
+
 async fn ban_redacting_events(server_kept_flag: bool) {
     use matrix_sdk::ruma::{room_id, user_id};
     use matrix_sdk_test::event_factory::EventFactory;
@@ -4140,6 +4263,60 @@ async fn a_ban_that_redacts_events_relies_on_a_server_that_kept_the_flag() {
 #[tokio::test]
 async fn a_ban_whose_flag_the_server_dropped_redacts_the_messages_itself() {
     ban_redacting_events(false).await;
+}
+
+#[tokio::test]
+async fn a_ban_whose_member_state_cannot_be_read_returns_the_error_without_redacting() {
+    use matrix_sdk::ruma::{room_id, user_id};
+    use matrix_sdk_test::event_factory::EventFactory;
+
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let room_id = room_id!("!moderated:example.org");
+    let spammer = user_id!("@spam:example.org");
+    let joined = EventFactory::new()
+        .room(room_id)
+        .sender(spammer)
+        .member(spammer)
+        .server_ts(5);
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id).add_state_event(joined),
+        )
+        .await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/v3/rooms/.*/ban$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(server.server())
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"^/_matrix/client/v3/rooms/.*/state/m\.room\.member/.*",
+        ))
+        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+            "errcode": "M_FORBIDDEN", "error": "no"
+        })))
+        .mount(server.server())
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/v3/rooms/.*/messages$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"start": "t0", "chunk": []})))
+        .expect(0)
+        .mount(server.server())
+        .await;
+    let core = core(&server, client).await;
+
+    let banned = core
+        .run(crate::api::members::BanParams {
+            room_id: room_id.to_owned(),
+            user_id: spammer.to_owned(),
+            reason: None,
+            redact_events: true,
+        })
+        .await;
+
+    assert!(banned.is_err(), "{banned:?}");
 }
 
 async fn read_unredacted(
@@ -4324,7 +4501,8 @@ async fn a_live_redaction_shows_its_reason_in_an_open_timeline() {
         )
         .await;
     let (core, mut events) = core_with_events(&server, client.clone()).await;
-    core.watch_redactions(&client);
+    let session = core.signed_in().unwrap();
+    session.watch_redactions();
     let SubscribeOk {
         subscription,
         mut items,
@@ -4546,8 +4724,9 @@ async fn join_by_alias_routes_through_the_resolved_servers_and_the_caller_via() 
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    let room_id = core
+    let room_id = session
         .join_room("#lobby:alias.example", &["child.example".to_owned()])
         .await
         .unwrap();
@@ -4606,8 +4785,9 @@ async fn joining_a_room_we_are_banned_from_says_so_with_the_reason() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    let error = core.join_room(room_id.as_str(), &[]).await.unwrap_err();
+    let error = session.join_room(room_id.as_str(), &[]).await.unwrap_err();
 
     assert!(
         matches!(&error, RpcError { code: RpcCode::Banned { reason: Some(reason) }, .. } if reason == "spam"),
@@ -4637,8 +4817,12 @@ async fn join_by_alias_caps_the_servers_of_a_big_room() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    core.join_room("#lobby:alias.example", &[]).await.unwrap();
+    session
+        .join_room("#lobby:alias.example", &[])
+        .await
+        .unwrap();
 
     let requests = server.server().received_requests().await.unwrap();
     let join = requests
@@ -4653,6 +4837,56 @@ async fn join_by_alias_caps_the_servers_of_a_big_room() {
         .collect();
     assert_eq!(via.len(), 10);
     assert_eq!(via[..3], ["alias.example", "creator.example", "s0.example"]);
+}
+
+#[tokio::test]
+async fn accepting_an_invite_joins_through_the_inviter_server() {
+    use matrix_sdk_test::{InvitedRoomBuilder, stripped_state_event};
+
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let me = client.user_id().unwrap().to_owned();
+    server
+        .mock_sync()
+        .ok_and_run(&client, |builder| {
+            builder.add_invited_room(
+                InvitedRoomBuilder::new(room_id!("!target:creator.example")).add_state_event(
+                    stripped_state_event!({
+                        "type": "m.room.member", "sender": "@friend:inviter.example",
+                        "state_key": me, "content": { "membership": "invite" }
+                    }),
+                ),
+            );
+        })
+        .await;
+    Mock::given(method("POST"))
+        .and(path_regex("^/_matrix/client/v3/join/(!|%21)target"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"room_id": "!target:creator.example"})),
+        )
+        .expect(1)
+        .mount(server.server())
+        .await;
+    let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
+
+    session
+        .join_room("!target:creator.example", &[])
+        .await
+        .unwrap();
+
+    let requests = server.server().received_requests().await.unwrap();
+    let join = requests
+        .iter()
+        .find(|request| request.url.path().contains("/join/"))
+        .unwrap();
+    let via: Vec<String> = join
+        .url
+        .query_pairs()
+        .filter(|(key, _)| key == "via")
+        .map(|(_, value)| value.into_owned())
+        .collect();
+    assert_eq!(via, ["inviter.example", "creator.example"]);
 }
 
 #[tokio::test]
@@ -4676,8 +4910,9 @@ async fn knock_by_alias_targets_the_resolved_room_id() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
-    let room_id = core
+    let room_id = session
         .knock_room("#lobby:alias.example", &[], None)
         .await
         .unwrap();
@@ -4883,7 +5118,7 @@ async fn opening_a_room_returns_its_power_levels() {
         )
         .await;
     Mock::given(method("GET"))
-        .and(wiremock::matchers::path_regex(r"/state(/[^/]+/)?$"))
+        .and(path_regex(r"/state(/[^/]+/)?$"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({
             "errcode": "M_NOT_FOUND", "error": "not found"
         })))
@@ -4922,21 +5157,370 @@ async fn missing_media_is_reported_apart_from_a_failing_server() {
         .mount(server.server())
         .await;
     let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
 
     assert!(matches!(
-        core.fetch_media("mxc://example.org/gone".to_owned(), 0, 0, true)
+        session
+            .fetch_media("mxc://example.org/gone".to_owned(), 0, 0, true)
             .await,
-        Err(crate::protocol::RpcError {
-            code: crate::protocol::RpcCode::MediaNotFound,
+        Err(RpcError {
+            code: RpcCode::MediaNotFound,
             ..
         })
     ));
     assert!(matches!(
-        core.fetch_media("mxc://example.org/flaky".to_owned(), 0, 0, true)
+        session
+            .fetch_media("mxc://example.org/flaky".to_owned(), 0, 0, true)
             .await,
-        Err(crate::protocol::RpcError {
-            code: crate::protocol::RpcCode::Unavailable,
+        Err(RpcError {
+            code: RpcCode::Unavailable,
             ..
         })
     ));
+}
+
+#[tokio::test]
+async fn a_private_space_link_is_never_written_to_the_space() {
+    use crate::api::spaces::RemoveParams;
+
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let (space, chat) = (
+        room_id!("!space:example.org"),
+        room_id!("!chat:example.org"),
+    );
+    server.sync_joined_room(&client, space).await;
+    server.sync_joined_room(&client, chat).await;
+    server
+        .mock_sync()
+        .ok_and_run(&client, |builder| {
+            builder.add_custom_global_account_data(json!({
+                "type": "moe.sable.dm_spaces",
+                "content": { "rooms": { chat.as_str(): [space] } }
+            }));
+        })
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex("/members"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "chunk": [] })))
+        .mount(server.server())
+        .await;
+    Mock::given(method("PUT"))
+        .and(path_regex("/state/m.space.child/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "event_id": "$child" })))
+        .expect(0)
+        .mount(server.server())
+        .await;
+    let core = core(&server, client).await;
+    let (space_id, room_id) = (space.to_owned(), chat.to_owned());
+    let via = Some(vec!["example.org".to_owned()]);
+
+    let added = AddParams {
+        space_id: space_id.clone(),
+        room_id: room_id.clone(),
+        suggested: None,
+    };
+    added.run(&core).await.unwrap_err();
+    let ordered = SetChildOrderParams {
+        space_id: space_id.clone(),
+        room_id: room_id.clone(),
+        order: Some("a".to_owned()),
+        via: via.clone(),
+    };
+    ordered.run(&core).await.unwrap_err();
+    let suggested = SetChildSuggestedParams {
+        space_id: space_id.clone(),
+        room_id: room_id.clone(),
+        suggested: true,
+        via,
+    };
+    suggested.run(&core).await.unwrap_err();
+    RemoveParams { space_id, room_id }
+        .run(&core)
+        .await
+        .unwrap_err();
+}
+
+#[tokio::test]
+async fn another_rooms_tombstone_does_not_choose_who_we_join_through() {
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let claim = Raw::new(&json!({
+        "type": "m.room.tombstone", "state_key": "", "sender": "@mallory:evil.example",
+        "event_id": "$claim", "origin_server_ts": 1,
+        "content": { "body": "moved", "replacement_room": "!target" }
+    }))
+    .unwrap()
+    .cast_unchecked();
+    let spam = JoinedRoomBuilder::new(room_id!("!spam")).add_state_event(claim);
+    server.sync_room(&client, spam).await;
+    let core = core(&server, client).await;
+    let session = core.signed_in().unwrap();
+
+    let _ = session
+        .join_room("!target", &["good.example".to_owned()])
+        .await;
+
+    let requests = server.server().received_requests().await.unwrap();
+    let join = requests
+        .iter()
+        .find(|request| request.url.path().contains("/join/"))
+        .unwrap();
+    let query = join.url.query().unwrap();
+    assert!(query.contains("good.example"), "{query}");
+    assert!(!query.contains("evil.example"), "{query}");
+}
+
+#[tokio::test]
+async fn only_a_space_we_manage_routes_a_child_we_are_not_in() {
+    for power in [50, 0] {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let state = |kind: &str, key: &str, content: serde_json::Value| {
+            Raw::new(&json!({
+                "type": kind, "state_key": key, "sender": "@alice:other.org",
+                "event_id": format!("${kind}{key}"), "origin_server_ts": 1, "content": content
+            }))
+            .unwrap()
+            .cast_unchecked()
+        };
+        let create = json!({ "type": "m.space", "room_version": "11" });
+        let levels = json!({ "state_default": 50, "users": { "@example:localhost": power } });
+        let child = json!({ "via": ["other.org"] });
+        let from = JoinedRoomBuilder::new(room_id!("!from"))
+            .add_state_event(state("m.room.create", "", create))
+            .add_state_event(state("m.room.power_levels", "", levels))
+            .add_state_event(state("m.space.child", "!elsewhere", child.clone()));
+        server.sync_room(&client, from).await;
+        server.sync_joined_room(&client, room_id!("!to")).await;
+        Mock::given(method("PUT"))
+            .and(path_regex("/state/m.space.child/"))
+            .and(wiremock::matchers::body_json(&child))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "event_id": "$moved" })))
+            .expect(u64::from(power == 50))
+            .mount(server.server())
+            .await;
+        let core = core(&server, client).await;
+
+        let added = AddParams {
+            space_id: room_id!("!to").to_owned(),
+            room_id: room_id!("!elsewhere").to_owned(),
+            suggested: None,
+        };
+
+        assert_eq!(added.run(&core).await.is_ok(), power == 50);
+    }
+}
+
+#[tokio::test]
+async fn room_creation_declares_and_invites_additional_creators() {
+    use matrix_sdk::ruma::user_id;
+    use wiremock::matchers::body_partial_json;
+
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/createRoom"))
+        .and(body_partial_json(json!({
+            "room_version": "12",
+            "creation_content": {
+                "additional_creators": ["@bob:example.org", "@carol:example.org"],
+            },
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "room_id": "!new:example.org" })),
+        )
+        .expect(1)
+        .mount(server.server())
+        .await;
+    let core = core(&server, client).await;
+
+    core.run(crate::api::rooms::CreateParams {
+        name: Some("General".to_owned()),
+        topic: None,
+        kind: RoomKind::Text,
+        public: false,
+        encrypted: false,
+        invite: vec![
+            user_id!("@bob:example.org").to_owned(),
+            user_id!("@dana:example.org").to_owned(),
+        ],
+        additional_creators: vec![
+            user_id!("@bob:example.org").to_owned(),
+            user_id!("@carol:example.org").to_owned(),
+        ],
+        parent_space: None,
+        alias: None,
+        room_version: Some("12".to_owned()),
+        join_rule: None,
+        federate: true,
+        predecessor: None,
+    })
+    .await
+    .unwrap();
+
+    let requests = server.server().received_requests().await.unwrap();
+    let create = requests
+        .iter()
+        .find(|request| request.url.path().ends_with("/createRoom"))
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&create.body).unwrap();
+    assert_eq!(
+        body["invite"],
+        json!([
+            "@bob:example.org",
+            "@dana:example.org",
+            "@carol:example.org"
+        ])
+    );
+}
+
+#[tokio::test]
+async fn a_room_created_in_a_space_names_it_as_its_canonical_parent() {
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let space_id = room_id!("!space:example.org");
+    server.sync_joined_room(&client, space_id).await;
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/createRoom"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "room_id": "!new:example.org" })),
+        )
+        .expect(1)
+        .mount(server.server())
+        .await;
+    Mock::given(method("PUT"))
+        .and(path_regex("/state/m.space.child/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "event_id": "$child" })))
+        .expect(1)
+        .mount(server.server())
+        .await;
+    let core = core(&server, client).await;
+
+    core.run(crate::api::rooms::CreateParams {
+        name: Some("General".to_owned()),
+        topic: None,
+        kind: RoomKind::Text,
+        public: false,
+        encrypted: false,
+        invite: Vec::new(),
+        additional_creators: Vec::new(),
+        parent_space: Some(space_id.to_owned()),
+        alias: None,
+        room_version: None,
+        join_rule: None,
+        federate: true,
+        predecessor: None,
+    })
+    .await
+    .unwrap();
+
+    let requests = server.server().received_requests().await.unwrap();
+    let create = requests
+        .iter()
+        .find(|request| request.url.path().ends_with("/createRoom"))
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&create.body).unwrap();
+    let parent = body["initial_state"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "m.space.parent")
+        .unwrap();
+    assert_eq!(
+        parent,
+        &json!({
+            "type": "m.space.parent",
+            "state_key": "!space:example.org",
+            "content": { "via": ["localhost"], "canonical": true }
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_upgraded_room_keeps_its_place_in_the_spaces_it_was_in() {
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    let state = |kind: &str, key: &str, content: serde_json::Value| {
+        Raw::new(&json!({
+            "type": kind, "state_key": key, "sender": "@example:localhost",
+            "event_id": format!("${kind}{key}"), "origin_server_ts": 1, "content": content
+        }))
+        .unwrap()
+        .cast_unchecked()
+    };
+    let listed = json!({ "via": ["localhost"], "order": "a", "suggested": true });
+    let space = JoinedRoomBuilder::new(room_id!("!space:localhost"))
+        .add_state_event(state(
+            "m.room.create",
+            "",
+            json!({ "type": "m.space", "room_version": "11" }),
+        ))
+        .add_state_event(state(
+            "m.room.power_levels",
+            "",
+            json!({ "state_default": 50, "users": { "@example:localhost": 100 } }),
+        ))
+        .add_state_event(state("m.space.child", "!old:localhost", listed.clone()));
+    server.sync_room(&client, space).await;
+    let parent = json!({ "via": ["localhost"], "canonical": true });
+    let old = JoinedRoomBuilder::new(room_id!("!old:localhost")).add_state_event(state(
+        "m.space.parent",
+        "!space:localhost",
+        parent.clone(),
+    ));
+    server.sync_room(&client, old).await;
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/rooms/!old:localhost/upgrade"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "replacement_room": "!new:localhost" })),
+        )
+        .mount(server.server())
+        .await;
+    let put = |room: &str, kind: &str, key: &str, body: &serde_json::Value| {
+        Mock::given(method("PUT"))
+            .and(path(format!(
+                "/_matrix/client/v3/rooms/{room}/state/{kind}/{key}"
+            )))
+            .and(wiremock::matchers::body_json(body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "event_id": "$sent" })))
+            .expect(1)
+    };
+    put(
+        "!new:localhost",
+        "m.space.parent",
+        "!space:localhost",
+        &parent,
+    )
+    .mount(server.server())
+    .await;
+    put(
+        "!space:localhost",
+        "m.space.child",
+        "!new:localhost",
+        &listed,
+    )
+    .mount(server.server())
+    .await;
+    put(
+        "!space:localhost",
+        "m.space.child",
+        "!old:localhost",
+        &json!({}),
+    )
+    .mount(server.server())
+    .await;
+    let core = core(&server, client).await;
+
+    let replacement = crate::api::rooms::UpgradeParams {
+        room_id: room_id!("!old:localhost").to_owned(),
+        new_version: "11".to_owned(),
+        additional_creators: Vec::new(),
+    }
+    .run(&core)
+    .await
+    .unwrap();
+
+    assert_eq!(replacement, "!new:localhost");
 }

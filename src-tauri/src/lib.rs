@@ -190,23 +190,17 @@ impl Carried for Request<'_> {
     }
 }
 
-async fn carried_attachment(
-    core: &sable_core::Core,
-    request: &impl Carried,
-) -> Result<(), RpcError> {
+async fn carried_attachment(core: &Arc<Core>, request: &impl Carried) -> Result<(), RpcError> {
     core.send_attachment(request.metadata()?, request.bytes()?)
         .await
 }
 
-async fn carried_upload(
-    core: &sable_core::Core,
-    request: &impl Carried,
-) -> Result<String, RpcError> {
+async fn carried_upload(core: &Arc<Core>, request: &impl Carried) -> Result<String, RpcError> {
     let mime = request.header("mime").ok_or(RpcCode::InvalidMedia)?;
     core.upload_media(mime, request.bytes()?).await
 }
 
-async fn carried_gallery(core: &sable_core::Core, request: &impl Carried) -> Result<(), RpcError> {
+async fn carried_gallery(core: &Arc<Core>, request: &impl Carried) -> Result<(), RpcError> {
     core.send_gallery(request.metadata()?, request.bytes()?)
         .await
 }
@@ -481,6 +475,11 @@ fn setup(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std::error::Err
         let builder = builder.on_navigation(|url| url.as_str().parse::<tauri::http::Uri>().is_ok());
         builder.build()?;
     }
+    // GeolocationPlugin.onPause reads state that only its load() sets, and tauri loads a plugin
+    // registered before the webview exists only once the webview is created. Registered after
+    // the windows, it is loaded before any pause.
+    #[cfg(all(target_os = "android", feature = "geolocation"))]
+    app.handle().plugin(tauri_plugin_geolocation::init())?;
 
     let data_dir = app.path().app_data_dir()?;
     // Android resolves that to the app data root, which the app
@@ -507,10 +506,15 @@ fn setup(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std::error::Err
         log::warn!("could not exclude the store from iCloud backup: {error}");
     }
     app.manage(notifications::PushStore(data_dir.clone()));
-    let (core, events) = Core::new(
-        data_dir.to_string_lossy().into_owned(),
-        session_store(&data_dir),
-    );
+    // Its lifecycle queue runs on the app's runtime, not on the short one a push brings up.
+    let runtime = tauri::async_runtime::handle();
+    let (core, events) = {
+        let _entered = runtime.inner().enter();
+        Core::new(
+            data_dir.to_string_lossy().into_owned(),
+            session_store(&data_dir),
+        )
+    };
     let event_sink = Arc::new(EventSink::default());
     #[cfg(target_os = "ios")]
     follow_ios_lifecycle(&core);
@@ -768,10 +772,12 @@ fn with_platform_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_sable_push::init());
 
-    #[cfg(feature = "geolocation")]
+    #[cfg(all(target_os = "ios", feature = "geolocation"))]
     let builder = builder.plugin(tauri_plugin_geolocation::init());
 
-    let builder = builder.plugin(tauri_plugin_sharekit::init());
+    let builder = builder
+        .plugin(tauri_plugin_sharekit::init())
+        .plugin(tauri_plugin_native_audio::init());
 
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_fs::init());
@@ -839,6 +845,10 @@ fn app_builder(sentry_client: Option<&::sentry::Client>) -> tauri::Builder<tauri
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the command list grows with each native command"
+)]
 pub fn run() {
     // Before the threads Tauri spawns, so they inherit the panic handler.
     let sentry_guard = sentry::init();
@@ -904,7 +914,11 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             ios::haptic_feedback,
             #[cfg(target_os = "ios")]
+            ios::play_notification_chime,
+            #[cfg(target_os = "ios")]
             ios::set_system_bars_hidden,
+            #[cfg(target_os = "ios")]
+            ios::set_keep_screen_on,
             #[cfg(target_os = "ios")]
             ios::set_badge_count,
             #[cfg(target_os = "android")]
@@ -919,6 +933,8 @@ pub fn run() {
             mobile::set_navigation_bar_light,
             #[cfg(target_os = "android")]
             mobile::set_system_bars_hidden,
+            #[cfg(target_os = "android")]
+            mobile::set_keep_screen_on,
             #[cfg(target_os = "android")]
             mobile::set_window_background
         ])

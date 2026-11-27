@@ -22,6 +22,7 @@
     onNavigate?: (href: string) => void;
     titleIcon: Component;
     collapsed: boolean;
+    actions?: Snippet;
     menuItems: Snippet;
   }
 
@@ -33,6 +34,7 @@
     onNavigate,
     titleIcon: TitleIcon,
     collapsed,
+    actions,
     menuItems,
   }: Props = $props();
 
@@ -76,7 +78,13 @@
 
 <div class="room-nav-top">
   {#if bannerShown && banner}
-    <div class="room-banner" style:--room-banner-max={`${preferences.roomBannerHeight}px`}>
+    <div
+      class={['room-banner', { fit: preferences.bannerFit === 'image' }]}
+      style:height={preferences.bannerFit === 'image'
+        ? undefined
+        : `${preferences.roomBannerHeight}px`}
+      style:--room-banner-max={`${preferences.roomBannerHeight}px`}
+    >
       <Banner source={banner} name={bannerName} width={640} height={190} />
       <ResizeHandle
         value={preferences.roomBannerHeight}
@@ -139,6 +147,7 @@
             <LockSimpleIcon />
           </span>
         {/if}
+        {@render actions?.()}
         <ActionMenu label={i18n.t('nav.listOptions')}>
           {#snippet trigger({ props })}
             <button
@@ -177,7 +186,14 @@
     display: block;
   }
 
-  .room-banner :global(.banner-image) {
+  .room-banner:not(.fit) :global(.banner-image),
+  .room-banner:not(.fit) :global(img) {
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+  }
+
+  .room-banner.fit :global(.banner-image) {
     height: auto;
     max-height: var(--room-banner-max);
     min-height: var(--header-height);
@@ -201,12 +217,15 @@
     top: 0;
   }
 
-  .room-nav-header.on-banner :global(.room-nav-menu) {
+  .room-nav-header.on-banner :global(.room-nav-menu),
+  .room-nav-header.on-banner :global(.room-sort-button) {
     color: inherit;
   }
 
   .room-nav-header.on-banner :global(.room-nav-menu:hover),
-  .room-nav-header.on-banner :global(.room-nav-menu[data-state='open']) {
+  .room-nav-header.on-banner :global(.room-nav-menu[data-state='open']),
+  .room-nav-header.on-banner :global(.room-sort-button:hover),
+  .room-nav-header.on-banner :global(.room-sort-button[data-state='open']) {
     background: var(--media-scrim-hover);
     color: inherit;
   }

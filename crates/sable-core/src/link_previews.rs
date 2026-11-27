@@ -1,4 +1,4 @@
-use crate::Core;
+use crate::SignedIn;
 use crate::protocol::{
     PostAuthorView, PostMediaKindView, PostMediaView, PostSensitivityView, PostStatsView, PostView,
     RpcError, UrlPreviewVideoView, UrlPreviewView,
@@ -28,8 +28,8 @@ pub(crate) fn is_mxc(source: &str) -> bool {
     source.starts_with("mxc://")
 }
 
-pub(crate) fn service_client() -> Result<matrix_sdk::reqwest::Client, RpcError> {
-    let builder = crate::tls::apply(matrix_sdk::reqwest::Client::builder());
+pub(crate) fn service_client() -> Result<reqwest::Client, RpcError> {
+    let builder = crate::tls::apply(reqwest::Client::builder());
     #[cfg(not(target_family = "wasm"))]
     let builder = builder.timeout(std::time::Duration::from_secs(10));
     builder.build().map_err(|error| {
@@ -114,6 +114,7 @@ fn into_post_view(post: Post) -> PostView {
             url: post.author.url.filter(|url| is_preview_url(url)),
         },
         text: text(post.text),
+        translated_from: text(post.translated_from),
         created_at: post.created_at,
         media: post
             .media
@@ -188,6 +189,7 @@ fn bundle_post(post: &PostView, images: &HashMap<String, PreviewImage>) -> Post 
             url: post.author.url.clone(),
         },
         text: post.text.clone(),
+        translated_from: post.translated_from.clone(),
         created_at: post.created_at,
         media: post
             .media
@@ -300,7 +302,13 @@ const MAX_PREVIEW_IMAGE_BYTES: usize = 1024 * 1024;
 const MAX_POST_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 const MAX_BUNDLED_IMAGES: usize = 10;
+pub(crate) const MAX_PREPARED_IMAGES: usize = 32;
 
+/// The room, whether it is encrypted, and the image's URL.
+pub(crate) type PreparedImageKey = (OwnedRoomId, bool, String);
+pub(crate) type PreparedImage = std::sync::Arc<tokio::sync::OnceCell<PreviewImage>>;
+
+#[derive(Clone)]
 pub(crate) struct PreviewImage {
     source: MediaSource,
     size: u64,
@@ -366,13 +374,9 @@ pub(crate) fn bundled_link_previews(
     serde_json::to_value(bundles).ok()
 }
 
-impl Core {
-    async fn preview_image_bytes(
-        &self,
-        client: &matrix_sdk::Client,
-        image: &str,
-        max_bytes: usize,
-    ) -> Option<Vec<u8>> {
+impl SignedIn {
+    async fn preview_image_bytes(&self, image: &str, max_bytes: usize) -> Option<Vec<u8>> {
+        let client = self.client();
         if !is_mxc(image) {
             return self.tunnel_media(image, max_bytes).await?.ok();
         }
@@ -390,7 +394,7 @@ impl Core {
         previews: &[UrlPreviewView],
     ) -> HashMap<String, PreviewImage> {
         let mut images = HashMap::new();
-        let mut wanted: Vec<WantedImage> = Vec::new();
+        let mut wanted: Vec<WantedImage<'_>> = Vec::new();
         for preview in previews {
             for image in preview_images(preview) {
                 if let Some(known) = wanted.iter_mut().find(|known| known.source == image.source) {
@@ -403,44 +407,66 @@ impl Core {
         if wanted.is_empty() {
             return images;
         }
-        let Ok(room) = self.room(room_id).await else {
+        let Ok(room) = self.room(room_id) else {
             return images;
         };
-        let Ok(encrypted) = self.room_is_encrypted(&room).await else {
+        let Ok(encrypted) = self.core().room_is_encrypted(&room).await else {
             return images;
         };
         let client = room.client();
-        for WantedImage {
-            source: image,
-            mime,
-            max_bytes,
-        } in wanted
-        {
-            let Some(data) = self.preview_image_bytes(&client, image, max_bytes).await else {
-                continue;
-            };
-            if data.is_empty() || data.len() > max_bytes {
-                continue;
+        for wanted in wanted {
+            let prepared =
+                self.prepared_image((room_id.clone(), encrypted, wanted.source.to_owned()));
+            if let Ok(image) = prepared
+                .get_or_try_init(|| async {
+                    self.upload_preview_image(&client, &wanted, encrypted)
+                        .await
+                        .ok_or(())
+                })
+                .await
+            {
+                images.insert(wanted.source.to_owned(), image.clone());
             }
-            let size = data.len() as u64;
-            let source = if encrypted {
-                let mut reader = std::io::Cursor::new(data);
-                let Ok(file) = client.upload_encrypted_file(&mut reader).await else {
-                    continue;
-                };
-                MediaSource::Encrypted(Box::new(file))
-            } else {
-                let mime = mime
-                    .and_then(|mime| mime.parse::<mime::Mime>().ok())
-                    .unwrap_or(mime::APPLICATION_OCTET_STREAM);
-                let Ok(response) = client.media().upload(&mime, data, None).await else {
-                    continue;
-                };
-                MediaSource::Plain(response.content_uri)
-            };
-            images.insert(image.to_owned(), PreviewImage { source, size });
         }
         images
+    }
+
+    /// Shared by the composer's early preparation and the send, so an image uploads once.
+    fn prepared_image(&self, key: PreparedImageKey) -> PreparedImage {
+        let state = self.state();
+        let mut prepared = state.preview_images.lock();
+        if let Some(image) = prepared.get(&key) {
+            return image.clone();
+        }
+        let image = PreparedImage::default();
+        prepared.insert(key, image.clone());
+        image
+    }
+
+    async fn upload_preview_image(
+        &self,
+        client: &matrix_sdk::Client,
+        image: &WantedImage<'_>,
+        encrypted: bool,
+    ) -> Option<PreviewImage> {
+        let data = self
+            .preview_image_bytes(image.source, image.max_bytes)
+            .await
+            .filter(|data| !data.is_empty() && data.len() <= image.max_bytes)?;
+        let size = data.len() as u64;
+        let source = if encrypted {
+            let mut reader = std::io::Cursor::new(data);
+            let file = client.upload_encrypted_file(&mut reader).await.ok()?;
+            MediaSource::Encrypted(Box::new(file))
+        } else {
+            let mime = image
+                .mime
+                .and_then(|mime| mime.parse::<mime::Mime>().ok())
+                .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+            let response = client.media().upload(&mime, data, None).await.ok()?;
+            MediaSource::Plain(response.content_uri)
+        };
+        Some(PreviewImage { source, size })
     }
 }
 
@@ -502,7 +528,7 @@ mod tests {
         let images = std::collections::HashMap::from([(
             previews[0].image.clone().unwrap(),
             super::PreviewImage {
-                source: matrix_sdk::ruma::events::room::MediaSource::Plain(
+                source: ruma::events::room::MediaSource::Plain(
                     "mxc://example.org/persistent".into(),
                 ),
                 size: 42,
@@ -636,6 +662,21 @@ mod tests {
     }
 
     #[test]
+    fn a_translated_post_names_the_language_it_came_from() {
+        let data = serde_json::json!({
+            "og:type": "note",
+            "note:content": "Hello",
+            "note:content:translated_from": "ja",
+        });
+        let post = super::url_preview("https://x.com/ran/status/1".to_owned(), &data)
+            .and_then(|preview| preview.post);
+        assert_eq!(
+            post.and_then(|post| post.translated_from).as_deref(),
+            Some("ja")
+        );
+    }
+
+    #[test]
     fn a_post_keeps_only_mxc_media_and_bundles_only_hosted_media() {
         let data = serde_json::json!({
             "og:title": "Alice (@alice.test)",
@@ -704,7 +745,7 @@ mod tests {
 
     #[test]
     fn a_bundled_post_carries_its_uploaded_images_like_og_image() {
-        let file: matrix_sdk::ruma::events::room::EncryptedFile =
+        let file: ruma::events::room::EncryptedFile =
             serde_json::from_value(encrypted_file("mxc://example.org/face")).unwrap();
         let mut preview = preview("https://bsky.app/x");
         preview.post = Some(crate::protocol::PostView {
@@ -736,23 +777,21 @@ mod tests {
             (
                 "https://cdn/face.jpg".to_owned(),
                 super::PreviewImage {
-                    source: matrix_sdk::ruma::events::room::MediaSource::Encrypted(Box::new(file)),
+                    source: ruma::events::room::MediaSource::Encrypted(Box::new(file)),
                     size: 5,
                 },
             ),
             (
                 "https://cdn/cat.png".to_owned(),
                 super::PreviewImage {
-                    source: matrix_sdk::ruma::events::room::MediaSource::Plain(
-                        "mxc://example.org/cat".into(),
-                    ),
+                    source: ruma::events::room::MediaSource::Plain("mxc://example.org/cat".into()),
                     size: 9,
                 },
             ),
             (
                 "https://cdn/still.jpg".to_owned(),
                 super::PreviewImage {
-                    source: matrix_sdk::ruma::events::room::MediaSource::Plain(
+                    source: ruma::events::room::MediaSource::Plain(
                         "mxc://example.org/still".into(),
                     ),
                     size: 4,

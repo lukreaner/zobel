@@ -19,7 +19,7 @@ use super::{
 };
 use crate::preview::describe;
 use crate::protocol::PushFetchView;
-use crate::session::PersistedSession;
+use crate::session::{AccountState, PersistedSession};
 use crate::store::{FileSessionStore, SessionStore};
 
 fn event(value: &serde_json::Value) -> AnySyncTimelineEvent {
@@ -247,8 +247,7 @@ async fn saved_login_as(
         account_id,
         store_id,
         session,
-        needs_reauth: false,
-        device_invalidated: false,
+        state: AccountState::Usable,
     });
     FileSessionStore::new(&base)
         .save(serde_json::to_vec(&registry).unwrap())
@@ -273,20 +272,6 @@ fn core_of(data_dir: &std::path::Path) -> std::sync::Arc<crate::Core> {
     .0
 }
 
-async fn waits_for(lease_holder: impl FnOnce(), store_id: &str) {
-    let opening = tokio::spawn({
-        let store_id = store_id.to_owned();
-        async move { drop(crate::session::store_lease(&store_id).await) }
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert!(!opening.is_finished());
-    lease_holder();
-    tokio::time::timeout(std::time::Duration::from_secs(5), opening)
-        .await
-        .unwrap()
-        .unwrap();
-}
-
 #[tokio::test]
 async fn a_push_decrypts_on_the_client_the_core_opens_for_its_login() {
     let data_dir = tempfile::tempdir().unwrap();
@@ -295,9 +280,7 @@ async fn a_push_decrypts_on_the_client_the_core_opens_for_its_login() {
     let account = saved_login(&server, data_dir.path()).await;
     let core = core_of(data_dir.path());
     core.accounts().await.unwrap();
-    let lease = crate::session::store_lease(&account.store_id).await;
-    let client = core.saved_account_client(&account, &lease).await.unwrap();
-    drop(lease);
+    let client = core.open_saved_account(&account).await.unwrap();
     server
         .mock_sync()
         .ok_and_run(&client, |builder| {
@@ -347,12 +330,7 @@ async fn pusher_upkeep_uses_the_client_of_the_core_in_the_process() {
     .await
     .unwrap();
 
-    assert!(
-        core.account_clients
-            .lock()
-            .await
-            .contains_key(&account.account_id)
-    );
+    assert!(core.clients.contains(&account.account_id));
     assert!(crate::session::base_client(&account.store_id).is_some());
     drop(upkeep);
 }
@@ -362,7 +340,7 @@ async fn a_core_opens_a_store_only_once_the_push_that_opened_it_is_done() {
     let data_dir = tempfile::tempdir().unwrap();
     let server = MatrixMockServer::new().await;
     server.mock_versions().ok().mount().await;
-    let account = saved_login(&server, data_dir.path()).await;
+    saved_login(&server, data_dir.path()).await;
     let cold = restore_push_client(
         &cold_push_store_dir(data_dir.path()),
         "@alice:example.org",
@@ -377,8 +355,7 @@ async fn a_core_opens_a_store_only_once_the_push_that_opened_it_is_done() {
     );
     let open = async {
         let accounts = core.accounts().await.unwrap();
-        let lease = crate::session::store_lease(&account.store_id).await;
-        core.saved_account_client(&accounts.accounts[0], &lease)
+        core.open_saved_account(&accounts.accounts[0])
             .await
             .unwrap();
     };
@@ -401,7 +378,7 @@ async fn a_core_drops_an_idle_cached_push_client_before_opening_its_store() {
     let data_dir = tempfile::tempdir().unwrap();
     let server = MatrixMockServer::new().await;
     server.mock_versions().ok().mount().await;
-    let account = saved_login(&server, data_dir.path()).await;
+    saved_login(&server, data_dir.path()).await;
     let base = cold_push_store_dir(data_dir.path());
     let cached = cold_host(&base, "@alice:example.org", "A").await.unwrap();
     assert!(matches!(*cached, PushHost::Own(_)));
@@ -413,8 +390,7 @@ async fn a_core_drops_an_idle_cached_push_client_before_opening_its_store() {
     );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let accounts = core.accounts().await.unwrap();
-        let lease = crate::session::store_lease(&account.store_id).await;
-        core.saved_account_client(&accounts.accounts[0], &lease)
+        core.open_saved_account(&accounts.accounts[0])
             .await
             .unwrap();
     })
@@ -423,12 +399,12 @@ async fn a_core_drops_an_idle_cached_push_client_before_opening_its_store() {
 }
 
 #[tokio::test]
-async fn the_core_cannot_activate_a_login_while_a_push_runs_on_its_client() {
+async fn a_push_on_the_cores_client_leaves_its_store_free_for_the_core() {
     let data_dir = tempfile::tempdir().unwrap();
     let server = MatrixMockServer::new().await;
     server.mock_versions().ok().mount().await;
     let account = saved_login(&server, data_dir.path()).await;
-    let _core = core_of(data_dir.path());
+    let core = core_of(data_dir.path());
     let host = push_host(
         &cold_push_store_dir(data_dir.path()),
         "@alice:example.org",
@@ -438,7 +414,85 @@ async fn the_core_cannot_activate_a_login_while_a_push_runs_on_its_client() {
     .await;
     assert!(matches!(host, Some(PushHost::Shared { .. })));
 
-    waits_for(|| drop(host), &account.store_id).await;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        crate::session::store_lease(&account.store_id),
+    )
+    .await
+    .expect("the push shares the core's client instead of reserving its store");
+    let session_client = core.open_saved_account(&account).await.unwrap();
+    let Some(PushHost::Shared { client, .. }) = &host else {
+        unreachable!();
+    };
+    assert_eq!(session_client.device_id(), client.device_id());
+    assert!(core.clients.contains(&account.account_id));
+    drop(host);
+}
+
+#[tokio::test]
+async fn a_push_for_an_inactive_account_leaves_no_client_or_open_store_behind() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let server = MatrixMockServer::new().await;
+    server.mock_versions().ok().mount().await;
+    let account = saved_login(&server, data_dir.path()).await;
+    let core = core_of(data_dir.path());
+    let host = push_host(
+        &cold_push_store_dir(data_dir.path()),
+        "@alice:example.org",
+        "A",
+        matrix_sdk::store::RoomLoadSettings::default(),
+    )
+    .await;
+    assert!(matches!(host, Some(PushHost::Shared { .. })));
+    assert!(core.clients.contains(&account.account_id));
+
+    drop(host);
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if core.clients.is_empty() && crate::session::base_client(&account.store_id).is_none() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the push's client is evicted and its stores are released");
+    drop(crate::session::store_lease(&account.store_id).await);
+}
+
+#[tokio::test]
+async fn a_push_for_a_login_whose_key_is_gone_asks_to_sign_in_again_quietly() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let server = MatrixMockServer::new().await;
+    server.mock_versions().ok().mount().await;
+    saved_login(&server, data_dir.path()).await;
+    let base = cold_push_store_dir(data_dir.path());
+    let (core, mut events) = crate::Core::new(
+        base.to_str().unwrap(),
+        Box::new(FileSessionStore::new(&base)),
+    );
+    core.accounts().await.unwrap();
+    std::fs::write(base.join("login-tokens/key"), "another-device").unwrap();
+
+    for _ in 0..2 {
+        let host = push_host(
+            &base,
+            "@alice:example.org",
+            "A",
+            matrix_sdk::store::RoomLoadSettings::default(),
+        )
+        .await;
+        assert!(host.is_none());
+    }
+
+    assert!(!core.accounts().await.unwrap().accounts[0].state.usable());
+    while let Ok(event) = events.try_recv() {
+        assert!(
+            !matches!(event, crate::protocol::CoreEvent::Failure { .. }),
+            "{event:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -801,7 +855,7 @@ async fn a_cold_push_in_an_all_messages_room_is_shown_under_a_mentions_default()
         .insert(
             NewPushRule::Room(NewSimplePushRule::new(
                 room_id!("!cold:example.org").to_owned(),
-                vec![matrix_sdk::ruma::push::Action::Notify],
+                vec![ruma::push::Action::Notify],
             )),
             None,
             None,
@@ -999,11 +1053,7 @@ async fn a_push_in_a_joined_room_is_fetched_without_syncing_account_data() {
     let _sync = fixture
         .server
         .mock_sliding_sync()
-        .ok(
-            matrix_sdk::ruma::api::client::sync::sync_events::msc4186::Response::new(
-                "1".to_owned(),
-            ),
-        )
+        .ok(ruma::api::client::sync::sync_events::msc4186::Response::new("1".to_owned()))
         .never()
         .mount_as_scoped()
         .await;
@@ -1054,17 +1104,27 @@ async fn read_rooms_asks_only_for_the_rooms_still_shown() {
         .and(body_json(json!({
             "conn_id": "read-rooms",
             "room_subscriptions": {
-                "!read:example.org": {"timeline_limit": 0},
-                "!unread:example.org": {"timeline_limit": 0},
-                "!left:example.org": {"timeline_limit": 0},
+                "!read:example.org": {"timeline_limit": 1},
+                "!unread:example.org": {"timeline_limit": 1},
+                "!left:example.org": {"timeline_limit": 1},
             },
+            "extensions": {"receipts": {"enabled": true, "rooms": ["*"]}},
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "pos": "1",
             "rooms": {
-                "!read:example.org": {"notification_count": 0},
-                "!unread:example.org": {"notification_count": 3},
+                "!read:example.org": {"notification_count": 0, "timeline": [
+                    {"type": "m.room.message", "event_id": "$read", "sender": "@bob:example.org",
+                        "origin_server_ts": 1, "content": {"msgtype": "m.text", "body": "hi"}},
+                ]},
+                "!unread:example.org": {"notification_count": 0, "timeline": [
+                    {"type": "m.room.message", "event_id": "$new", "sender": "@bob:example.org",
+                        "origin_server_ts": 2, "content": {"msgtype": "m.text", "body": "hi"}},
+                ]},
             },
+            "extensions": {"receipts": {"rooms": {
+                "!read:example.org": {"$read": {"m.read": {"@alice:example.org": {"ts": 1}}}},
+            }}},
         })))
         .expect(1)
         .mount(fixture.server.server())
@@ -1086,13 +1146,7 @@ async fn read_rooms_asks_only_for_the_rooms_still_shown() {
         ])
         .await;
 
-    assert_eq!(
-        read,
-        Some(vec![
-            "!read:example.org".to_owned(),
-            "!left:example.org".to_owned()
-        ])
-    );
+    assert_eq!(read, Some(vec!["!read:example.org".to_owned()]));
     drop(session);
     remove_data_dir(&fixture.data_dir).await;
 }
@@ -1483,7 +1537,7 @@ async fn a_room_with_media_previews_off_gets_no_push_image() {
 }
 
 fn media_room(
-    account_data: Option<Raw<matrix_sdk::ruma::events::AnyRoomAccountDataEvent>>,
+    account_data: Option<Raw<ruma::events::AnyRoomAccountDataEvent>>,
 ) -> JoinedRoomBuilder {
     let factory = matrix_sdk_test::event_factory::EventFactory::new()
         .room(room_id!("!cold:example.org"))
@@ -1590,7 +1644,12 @@ async fn push_sender_names_without_a_room() {
     let mut session = session(&fixture).await;
     session.room_id = room_id!("!missing:example.org").to_owned();
     let media = session
-        .media(Some("@bob:example.org"), Some("\u{200b}\u{2800}"), None)
+        .media(
+            Some("@bob:example.org"),
+            Some("\u{200b}\u{2800}"),
+            None,
+            None,
+        )
         .await;
     assert_eq!(media.sender_name, "@bob:example.org");
     drop(session);
@@ -1621,12 +1680,43 @@ async fn one_push_session_fetches_the_event_and_its_media() {
         .media(
             Some(&event.sender),
             event.sender_display_name.as_deref(),
+            event.sender_avatar_url.as_deref(),
             Some(&event.content),
         )
         .await;
     assert_eq!(
         std::fs::read(media.image.unwrap().path).unwrap(),
         thumbnails["cat"]
+    );
+
+    drop(session);
+    remove_data_dir(&fixture.data_dir).await;
+}
+
+#[tokio::test]
+async fn a_push_sender_takes_the_avatar_resolved_with_the_event() {
+    let fixture = ColdFixture::new("fetched-avatar", media_room(None), None).await;
+    let thumbnails = mount_thumbnails(&fixture, 0..=2).await;
+    let session = session(&fixture).await;
+
+    let ghost = session
+        .media(
+            Some("@ghost:example.org"),
+            Some("Ghost"),
+            Some("mxc://example.org/cat"),
+            None,
+        )
+        .await;
+    assert_eq!(
+        std::fs::read(ghost.sender.unwrap()).unwrap(),
+        thumbnails["cat"]
+    );
+    let member = session
+        .media(Some("@sender:example.org"), None, None, None)
+        .await;
+    assert_eq!(
+        std::fs::read(member.sender.unwrap()).unwrap(),
+        thumbnails["face"]
     );
 
     drop(session);
@@ -1702,7 +1792,7 @@ async fn push_sender_names_follow_plain_and_sealed_profile_overrides() {
                 UNSTABLE, &json!({"@sender:example.org":{"displayname":"Locked"}})
             ).unwrap()}))
                 .unwrap()
-                .cast_unchecked::<matrix_sdk::ruma::events::AnyGlobalAccountDataEvent>(),
+                .cast_unchecked::<ruma::events::AnyGlobalAccountDataEvent>(),
             );
         })
         .await;
@@ -1753,7 +1843,7 @@ async fn push_sender_names_follow_plain_and_sealed_profile_overrides() {
                 builder.add_global_account_data(
                     Raw::new(&json!({"type":event_type,"content":content}))
                         .unwrap()
-                        .cast_unchecked::<matrix_sdk::ruma::events::AnyGlobalAccountDataEvent>(),
+                        .cast_unchecked::<ruma::events::AnyGlobalAccountDataEvent>(),
                 );
             })
             .await;
@@ -1779,7 +1869,7 @@ async fn push_sender_names_follow_plain_and_sealed_profile_overrides() {
                 COLD_ROOM,
                 Some("@sender:example.org"),
                 Some("Payload"),
-                None,
+                None
             )
             .await
             .sender_name,
@@ -1834,7 +1924,8 @@ async fn a_notification_reply_sends_the_text_then_reads_the_main_timeline() {
                 ),
                 (
                     "fi.mau.msc4461.per_message_profiles.v3",
-                    json!({"profiles": [{"id": "kris", "displayname": "Kris"}]}),
+                    json!({"profiles": [{"id": "kris", "displayname": "Kris",
+                        "avatar_url": "mxc://example.org/face"}]}),
                 ),
             ] {
                 wiremock::Mock::given(wiremock::matchers::method("GET"))
@@ -1849,6 +1940,7 @@ async fn a_notification_reply_sends_the_text_then_reads_the_main_timeline() {
             expected[crate::personas::PER_MESSAGE_PROFILE] =
                 json!({"id": "kris", "displayname": "Kris"});
         }
+        let thumbnails = mount_thumbnails(&fixture, 0..=1).await;
         mount_notified_event(&fixture, None).await;
         fixture
             .server
@@ -1888,15 +1980,22 @@ async fn a_notification_reply_sends_the_text_then_reads_the_main_timeline() {
             .mount()
             .await;
 
-        assert_eq!(
-            session(&fixture)
-                .await
-                .reply("on my way", "reply-1", "$notified", false)
-                .await
-                .as_deref(),
-            Some("on my way"),
-            "selected={selected}"
+        let sent = session(&fixture)
+            .await
+            .reply("on my way", "reply-1", "$notified", false)
+            .await
+            .unwrap();
+        assert_eq!(sent.text, "on my way", "selected={selected}");
+        let profile = sent.profile.map(|profile| {
+            let avatar = std::fs::read(profile.avatar.unwrap()).unwrap();
+            (profile.id, profile.name, avatar)
+        });
+        let expected = (
+            "kris".to_owned(),
+            "Kris".to_owned(),
+            thumbnails["face"].clone(),
         );
+        assert_eq!(profile, selected.then_some(expected), "selected={selected}");
 
         remove_data_dir(&fixture.data_dir).await;
     }
@@ -2011,29 +2110,49 @@ async fn saved_refresh_token(store: &FileSessionStore, store_dir: &std::path::Pa
             &account.session.credentials.device_id(),
         )
         .unwrap()
-        .unwrap_or_else(|| account.session.credentials.tokens())
+        .unwrap_or_else(|_| account.session.credentials.tokens())
         .refresh_token
         .unwrap()
 }
 
-async fn mount_oauth_refresh(server: &MatrixMockServer, expected: u64, delay: std::time::Duration) {
+/// Notifies once the token request reaches the server.
+struct Refresh(
+    std::sync::Arc<tokio::sync::Notify>,
+    wiremock::ResponseTemplate,
+);
+
+impl wiremock::Respond for Refresh {
+    fn respond(&self, _: &wiremock::Request) -> wiremock::ResponseTemplate {
+        self.0.notify_one();
+        self.1.clone()
+    }
+}
+
+async fn mount_oauth_refresh(
+    server: &MatrixMockServer,
+    expected: u64,
+    delay: std::time::Duration,
+) -> std::sync::Arc<tokio::sync::Notify> {
     use wiremock::{
         Mock, ResponseTemplate,
         matchers::{method, path},
     };
 
     server.oauth().mock_server_metadata().ok().mount().await;
+    let requested = std::sync::Arc::new(tokio::sync::Notify::new());
     Mock::given(method("POST"))
         .and(path("/oauth2/token"))
-        .respond_with(
+        .respond_with(Refresh(
+            requested.clone(),
             ResponseTemplate::new(200)
                 .set_body_json(json!({"access_token": "new-access", "expires_in": 300,
                     "refresh_token": "new-refresh", "token_type": "Bearer"}))
                 .set_delay(delay),
-        )
+        ))
         .expect(expected)
         .mount(server.server())
         .await;
+    requested
 }
 
 async fn mount_whoami(server: &MatrixMockServer) {
@@ -2130,7 +2249,7 @@ async fn a_cold_push_cut_short_still_saves_the_rotated_tokens() {
     server.mock_versions().ok().mount().await;
     let (_data_dir, store_dir, store) =
         seeded_cold_store(&oauth_session(&server), "cold-push-cut-short").await;
-    mount_oauth_refresh(&server, 1, std::time::Duration::from_millis(1500)).await;
+    let requested = mount_oauth_refresh(&server, 1, std::time::Duration::from_millis(500)).await;
     mount_whoami(&server).await;
 
     let cold_dir = store_dir.clone();
@@ -2139,16 +2258,18 @@ async fn a_cold_push_cut_short_still_saves_the_rotated_tokens() {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(super::settle_refreshes(tokio::time::timeout(
-                std::time::Duration::from_millis(500),
-                async {
-                    let client = restore_push_client(&cold_dir, &OAUTH_USER, &OAUTH_DEVICE)
-                        .await
-                        .unwrap();
-                    let _ = client.retry(|| client.whoami()).await;
-                },
-            )))
-            .unwrap_err();
+            .block_on(super::settle_refreshes(async {
+                // The push ends while its refresh is still on the wire.
+                tokio::select! {
+                    () = requested.notified() => {}
+                    () = async {
+                        let client = restore_push_client(&cold_dir, &OAUTH_USER, &OAUTH_DEVICE)
+                            .await
+                            .unwrap();
+                        let _ = client.retry(|| client.whoami()).await;
+                    } => panic!("the push finished before its refresh"),
+                }
+            }));
     })
     .await
     .unwrap();
@@ -2263,11 +2384,7 @@ impl SharedLogin {
     }
 
     async fn app_client(&self) -> matrix_sdk::Client {
-        let lease = crate::session::store_lease(&self.account.store_id).await;
-        self.core
-            .saved_account_client(&self.account, &lease)
-            .await
-            .unwrap()
+        self.core.open_saved_account(&self.account).await.unwrap()
     }
 
     async fn push_client(&self) -> super::PushClient {
@@ -2465,6 +2582,7 @@ fn only_mentions_and_direct_messages_want_a_banner() {
         sender_name: None,
         sender_avatar_url: None,
         body: "hi".to_owned(),
+        emotes: Vec::new(),
         mention,
         noisy: None,
     };

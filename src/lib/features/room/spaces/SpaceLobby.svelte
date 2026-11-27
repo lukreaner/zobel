@@ -27,7 +27,13 @@
   import { preferences } from '#lib/settings/preferences.svelte.js';
   import { createDragList, type DropEdge, type DropInstruction } from '#lib/ui/drag-list.js';
   import { joinErrorMessage } from '#lib/rooms/join-errors.js';
-  import { matrixLinkPath, copyRoomLink, joinVia, roomSectionPath } from '#lib/rooms/permalink.js';
+  import {
+    matrixLinkPath,
+    copyRoomLink,
+    joinVia,
+    roomSectionPath,
+    type PermalinkFormat,
+  } from '#lib/rooms/permalink.js';
   import { roomPathParam, roomPathParamFromId, useRoomList } from '#lib/rooms/room-list.svelte.js';
   import { layoutSpaceIds, withoutSpace, withSpace } from '#lib/spaces/sidebar-layout.js';
   import { useSpaceSidebar } from '#lib/spaces/sidebar-layout.svelte.js';
@@ -60,6 +66,7 @@
     localHierarchyRooms,
     mergeHierarchyRooms,
     pendingSuggestedOverrides,
+    privateChildIds,
     sameLobbyItem,
     type ChildOrderOverride,
     type HierarchyRoom,
@@ -86,6 +93,7 @@
   import { SpaceHierarchyLoader } from './space-hierarchy-loader.svelte';
   import { JoinQueue } from './join-queue.svelte';
   import { scrollHint } from '#lib/ui/scroll-hint.js';
+  import '#lib/ui/primitives/dialog-body.css';
 
   interface Props {
     space: RoomListItemView | null;
@@ -461,6 +469,24 @@
     }
   }
 
+  function copyChildLink(
+    child: HierarchyRoomView,
+    parentId: string | null,
+    format: PermalinkFormat
+  ): void {
+    const edge =
+      parentId === null
+        ? undefined
+        : childEdges(merged, parentId).find((edge) => edge.room_id === child.room_id);
+    const routing = joinedIds.has(child.room_id)
+      ? undefined
+      : {
+          via: edge?.via ?? [],
+          parentId: parentId !== null && joinedIds.has(parentId) ? parentId : spaceId,
+        };
+    void copyRoomLink(core, child, null, format, routing);
+  }
+
   async function remove(section: HierarchySection, entry: HierarchyRoom): Promise<void> {
     const parentId = section.space?.room_id ?? spaceId;
     if (!parentId) return;
@@ -577,10 +603,9 @@
     target: string,
     position: DropEdge
   ): void {
-    const siblings = edges.map((edge) => ({
-      roomId: edge.room_id,
-      order: edge.order,
-    }));
+    const siblings = edges
+      .filter((edge) => !edge.private)
+      .map((edge) => ({ roomId: edge.room_id, order: edge.order }));
     const from = siblings.findIndex((sibling) => sibling.roomId === source);
     const to = siblings.findIndex((sibling) => sibling.roomId === target);
     if (from === -1 || to === -1) return;
@@ -622,11 +647,13 @@
   }
 
   function move(section: HierarchySection, roomId: string, delta: number): void {
-    const index = section.rooms.findIndex((entry) => entry.room.room_id === roomId);
+    const privateIds = privateChildIds(section.siblings);
+    const rooms = section.rooms.filter((entry) => !privateIds.has(entry.room.room_id));
+    const index = rooms.findIndex((entry) => entry.room.room_id === roomId);
     const to = index + delta;
-    if (index === -1 || to < 0 || to >= section.rooms.length) return;
+    if (index === -1 || to < 0 || to >= rooms.length) return;
 
-    const neighbour = section.rooms[to];
+    const neighbour = rooms[to];
     reorder(section, roomId, neighbour.room.room_id, delta < 0 ? 'above' : 'below');
   }
 
@@ -708,7 +735,7 @@
     {/if}
     <Avatar
       id={spaceId}
-      src={space?.avatar_url ?? null}
+      src={space?.display_avatar_url ?? null}
       openable={true}
       name={space?.name ?? ''}
       size="large"
@@ -887,9 +914,7 @@
         ) => {
           void join(child, via, parentId, action);
         }}
-        onCopyLink={(child: HierarchyRoomView) => {
-          void copyRoomLink(core, child);
-        }}
+        onCopyLink={copyChildLink}
         onRemove={(section: HierarchySection, entry: HierarchyRoom) => {
           void remove(section, entry);
         }}
@@ -926,7 +951,7 @@
 </section>
 
 <DialogFrame bind:open={topicOpen} variant="verification" label={i18n.t('room.lobbyTopicTitle')}>
-  <div class="topic-dialog">
+  <div class="dialog-body topic-dialog">
     {#if topicRoom}
       <div class="topic-room">
         <Avatar id={topicRoom.room_id} src={topicRoom.avatar_url} name={label(topicRoom)} />
@@ -1102,7 +1127,6 @@
   }
 
   .topic-dialog {
-    display: grid;
     gap: var(--space-300);
     width: min(32rem, calc(100vw - 2rem));
   }
@@ -1143,7 +1167,6 @@
     color: var(--surface-var-on-container);
     line-height: 1.45;
     margin: 0;
-    max-height: 60dvh;
     overflow: auto;
     overflow-wrap: break-word;
   }

@@ -4,6 +4,8 @@ import { render, screen, within } from '@testing-library/svelte';
 import { userEvent } from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type {
+  CoreEvent,
+  InviteHistoryView,
   MemberView,
   RoomPermissionsView,
   RoomListItemView,
@@ -28,7 +30,7 @@ Object.assign(core.rpc.members, {
   permissions: vi.fn<(params: { room_id: string }) => Promise<RoomPermissionsView>>(),
   denyKnock: vi.fn<(params: { room_id: string; user_id: string }) => Promise<null>>(),
 });
-Object.assign(core.rpc.rooms, { invite: vi.fn<() => Promise<null>>() });
+Object.assign(core.rpc.rooms, { invite: vi.fn<() => Promise<InviteHistoryView>>() });
 const roomList = new RoomList(core as unknown as CoreClient);
 const room = {
   room_id: '!room:example.org',
@@ -69,7 +71,7 @@ beforeEach(() => {
   });
   core.rpc.members.permissions.mockReset().mockResolvedValue(permissions);
   core.rpc.members.list.mockReset().mockResolvedValue([alice]);
-  core.rpc.rooms.invite.mockReset().mockResolvedValue(null);
+  core.rpc.rooms.invite.mockReset().mockResolvedValue('not_shared');
   core.rpc.members.denyKnock.mockReset().mockResolvedValue(null);
   roomList.rooms = [room];
 });
@@ -119,6 +121,27 @@ test('loads all requests with one RPC on mount and each room-list update', async
   });
   expect(core.rpc.members.permissions).not.toHaveBeenCalled();
   expect(core.rpc.members.list).not.toHaveBeenCalled();
+});
+
+test('loads again when someone asks to join a room', async () => {
+  let emit!: (event: CoreEvent) => void;
+  core.subscribeEvents.mockImplementationOnce((listener) => {
+    emit = listener;
+    return () => {};
+  });
+  render(JoinRequestList);
+  await screen.findByText('Alice');
+
+  emit({
+    type: 'members_changed',
+    room_id: room.room_id,
+    member: { ...alice, membership: 'join' },
+  });
+  emit({ type: 'members_changed', room_id: room.room_id, member: alice });
+
+  await vi.waitFor(() => {
+    expect(core.rpc.members.joinRequests).toHaveBeenCalledTimes(2);
+  });
 });
 
 test('sorts newest requests first and keeps room-list order for equal timestamps', async () => {

@@ -38,7 +38,7 @@ pub(crate) fn room_notification_id(user_id: &str, room_id: &str) -> i32 {
 
 pub(crate) async fn show<R: Runtime>(
     app: &AppHandle<R>,
-    core: &sable_core::Core,
+    core: &std::sync::Arc<sable_core::Core>,
     view: &NotificationView,
 ) {
     if !core.notifications_enabled() || core.shows_banner(view) {
@@ -74,7 +74,7 @@ fn grant(
 
 pub(crate) async fn show_test<R: Runtime>(
     app: &AppHandle<R>,
-    core: &sable_core::Core,
+    core: &std::sync::Arc<sable_core::Core>,
     sequence: u32,
 ) {
     show(app, core, &test_view(sequence)).await;
@@ -93,8 +93,20 @@ fn test_view(sequence: u32) -> NotificationView {
         sender_name: Some("Sable".to_owned()),
         sender_avatar_url: None,
         body: format!("Test notification {sequence}"),
+        emotes: Vec::new(),
         mention: false,
         noisy: Some(true),
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn forget_extension_cooldown(user_id: &str, room_ids: &[String]) {
+    let forgotten = crate::ios::shared_store_dir().and_then(|root| {
+        display::forget_extension_cooldown(&root.join("alert-cooldown.json"), user_id, room_ids)
+            .map_err(|error| error.to_string())
+    });
+    if let Err(error) = forgotten {
+        log::debug!("could not clear the notification extension's alert times: {error}");
     }
 }
 
@@ -103,6 +115,8 @@ pub(crate) async fn dismiss<R: Runtime>(app: &AppHandle<R>, user_id: &str, room_
     for room_id in room_ids {
         display::forget(user_id, room_id);
     }
+    #[cfg(target_os = "ios")]
+    forget_extension_cooldown(user_id, room_ids);
     if room_ids.is_empty() {
         return;
     }
@@ -122,6 +136,8 @@ pub(crate) async fn dismiss_read<R: Runtime>(
     for room_id in room_ids {
         display::forget(user_id, room_id);
     }
+    #[cfg(target_os = "ios")]
+    forget_extension_cooldown(user_id, room_ids);
     let ids: Vec<i32> = room_ids
         .iter()
         .map(|room_id| room_notification_id(user_id, room_id))

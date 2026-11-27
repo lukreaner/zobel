@@ -80,3 +80,8 @@ test('names the OS, browser and app version for the environment field', () => {
   expect(info[1]).toBe(`- Browser: ${navigator.userAgent}`);
   expect(info[2]).toMatch(/^- Zobel: v/);
 });
+
+test('adds the homeserver before the video line', () => {
+  const info = issueEnvironment('linux', 'vaapi', 'example.org').split('\n');
+  expect(info.slice(3)).toEqual(['- Homeserver: example.org', '- Video: vaapi']);
+});

@@ -4,7 +4,7 @@ import type { MatrixLink, RoomPreviewView } from '#src/generated/protocol';
 import { fireEvent, render, screen, type RenderResult } from '@testing-library/svelte';
 import { userEvent } from '@testing-library/user-event';
 import { tick } from 'svelte';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 
 const roomList = vi.hoisted(() => ({
   rooms: [] as { room_id: string; canonical_alias: string | null; name: string | null }[],
@@ -16,9 +16,11 @@ vi.mock('#lib/rooms/room-list.svelte.js', () => ({
 
 vi.mock('#lib/core/context.js');
 vi.mock('$app/navigation', () => import('#lib/test-support/app-navigation.js'));
+vi.mock('#lib/platform/clipboard.js', () => ({ copyText: vi.fn(() => Promise.resolve()) }));
 import { goto } from '#lib/test-support/app-navigation.js';
 
 import { core as baseCore } from '#lib/core/__mocks__/context.js';
+import { copyText } from '#lib/platform/clipboard.js';
 
 const core = baseCore;
 Object.assign(core.rpc.rooms, { preview: vi.fn<() => Promise<{ name: string | null }>>() });
@@ -29,6 +31,7 @@ const timeline = Object.assign(baseCore.rpc.timeline, {
 import { mediaPreviewSettings } from '#lib/settings/media-previews.svelte.js';
 import { preferences } from '#lib/settings/preferences.svelte.js';
 import { markdownToContent } from '#lib/model/model.js';
+import { formatMessageTimestamp } from '#lib/ui/date-time.js';
 
 import FormattedBody from './FormattedBody.svelte';
 import FormattedBodyHarness from './FormattedBodyHarness.test.svelte';
@@ -86,6 +89,30 @@ test.each(['link.sable.moe', 'matrix.to'])(
     document.removeEventListener('click', onDocumentClick);
   }
 );
+
+test('opens links on the custom link host through the room-level handler', async () => {
+  preferences.matrixLinkSelector = 'custom';
+  preferences.matrixLinkCustom = 'links.example.org';
+  onTestFinished(() => {
+    preferences.matrixLinkSelector = 'sable';
+    preferences.matrixLinkCustom = '';
+  });
+  const onMatrixLink = vi.fn();
+  render(FormattedBody, {
+    props: {
+      html: '<a href="https://links.example.org/#/!room:example.org/$event">Message</a>',
+      onMatrixLink,
+    },
+  });
+  await tick();
+
+  await user.click(link());
+
+  expect(onMatrixLink).toHaveBeenCalledWith(
+    { kind: 'event', room_id: '!room:example.org', event_id: '$event' },
+    expect.any(HTMLAnchorElement)
+  );
+});
 
 test.each([
   '<a href="matrix:u/ana:example.org">Ana</a>',
@@ -241,7 +268,8 @@ test.each(['click', 'keyboard'] as const)(
   async (input) => {
     const { formatted_body: html } = markdownToContent(
       '||this is a *huge* spoiler|| and ||another||',
-      []
+      [],
+      'matrix.to'
     );
     render(FormattedBody, { html: html ?? '' });
     await tick();
@@ -513,8 +541,8 @@ test('a code block gains a language label and a copy control', async () => {
 
   expect(screen.getByText('rust')).toHaveClass('code-language');
   expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
-  // Short blocks are not collapsible.
   expect(screen.queryByRole('button', { name: 'Expand' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Line numbers' })).not.toBeInTheDocument();
   expect(document.querySelector('.code-block')).not.toHaveAttribute('data-collapsed');
 });
 
@@ -536,13 +564,14 @@ test('a code block drops the newline the fence left at its end', async () => {
   expect(document.querySelector('pre code')?.textContent).toBe('one\ntwo');
 });
 
-test('an unlabelled block falls back to a generic label', async () => {
+test('an unlabelled block falls back to a generic label and starts wrapped', async () => {
   render(FormattedBody, {
     props: { html: '<pre><code>plain</code></pre>' },
   });
   await tick();
 
   expect(screen.getByText('Code')).toHaveClass('code-language');
+  expect(screen.getByRole('button', { name: 'Wrap' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('a long block starts collapsed and expands on demand', async () => {
@@ -559,6 +588,49 @@ test('a long block starts collapsed and expands on demand', async () => {
 
   expect(block).not.toHaveAttribute('data-collapsed');
   expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument();
+});
+
+test('multiline code can toggle wrapping and line numbers and copy its source', async () => {
+  const source = 'let a = 1;\n\nlet b = 2;';
+  const { container } = render(FormattedBody, {
+    props: { html: '<pre><code class="language-text">' + source + '</code></pre>' },
+  });
+  await tick();
+
+  const block = container.querySelector('.code-block');
+  const wrap = screen.getByRole('button', { name: 'Wrap' });
+  expect(block).not.toHaveAttribute('data-wrapped');
+  await user.click(wrap);
+  expect(block).toHaveAttribute('data-wrapped');
+  expect(wrap).toHaveAttribute('aria-pressed', 'true');
+
+  const lines = screen.getByRole('button', { name: 'Line numbers' });
+  expect(block).toHaveAttribute('data-line-numbers');
+  await user.click(screen.getByRole('button', { name: 'Copy' }));
+  expect(copyText).toHaveBeenCalledWith(source);
+  expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+
+  await user.click(lines);
+  expect(block).not.toHaveAttribute('data-line-numbers');
+  expect(lines).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('keeps line wrappers after syntax highlighting resolves', async () => {
+  const highlighter = await import('#lib/ui/code-highlight.js');
+  vi.spyOn(highlighter, 'highlightCode').mockResolvedValue(
+    '<a-c>/*\n * note\n */</a-c>\n<a-k>fn</a-k> main() {}'
+  );
+
+  render(FormattedBody, {
+    props: { html: '<pre><code class="language-rust">/*\n * note\n */\nfn main() {}</code></pre>' },
+  });
+
+  await vi.waitFor(() => {
+    expect(document.querySelector('pre code a-k')).not.toBeNull();
+  });
+
+  expect(document.querySelectorAll('.code-line')).toHaveLength(4);
+  expect(document.querySelector('pre code')?.textContent).toBe('/*\n * note\n */\nfn main() {}');
 });
 
 test('an unhighlightable language leaves the escaped source intact', async () => {
@@ -653,17 +725,22 @@ test('leaves out the description when an emoji alt text is just its shortcode', 
   expect(document.querySelector('.emote-card-description')).toBeNull();
 });
 
-test('shows the target of a link whose text differs from it on hover', async () => {
+test.each([
+  ['https://example.com/a', 'click here', 'https://example.com/a'],
+  ['https://matrix.to/#/%23elsewhere:example.org', 'click here', '#elsewhere:example.org'],
+  ['matrix:u/alice:example.org', '@alice', '@alice:example.org'],
+  ['https://link.sable.moe/#/!room:example.org/$event', 'click here', '!room:example.org/$event'],
+])('shows the actual destination of %s on hover', async (href, label, destination) => {
   render(FormattedBodyHarness, {
-    props: { html: '<p><a href="https://example.com/a">click here</a></p>', entries: [] },
+    props: { html: `<p><a href="${href}"><strong>click here</strong></a></p>`, entries: [] },
   });
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  await user.hover(screen.getByRole('link', { name: 'click here' }));
+  await user.hover(screen.getByRole('link', { name: label }));
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  expect(document.querySelector('.tooltip')?.textContent.trim()).toBe('https://example.com/a');
+  expect(document.querySelector('.tooltip')?.textContent.trim()).toBe(destination);
 });
 
 test('closes the link target tooltip when the window loses focus', async () => {
@@ -683,9 +760,12 @@ test('closes the link target tooltip when the window loses focus', async () => {
   expect(document.querySelector('.tooltip')).not.toBeInTheDocument();
 });
 
-test('shows the link target when the link takes keyboard focus', async () => {
+test.each([
+  ['https://example.com/a', 'https://example.com/a'],
+  ['matrix:roomid/room:example.org/e/event', '!room:example.org/$event'],
+])('shows the destination of %s on keyboard focus', async (href, destination) => {
   render(FormattedBodyHarness, {
-    props: { html: '<p><a href="https://example.com/a">click here</a></p>', entries: [] },
+    props: { html: `<p><a href="${href}">click here</a></p>`, entries: [] },
   });
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -693,18 +773,36 @@ test('shows the link target when the link takes keyboard focus', async () => {
   await user.tab();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  expect(document.querySelector('.tooltip')?.textContent.trim()).toBe('https://example.com/a');
+  expect(document.querySelector('.tooltip')?.textContent.trim()).toBe(destination);
 });
 
-test('shows no tooltip for a link whose text is its own address', async () => {
+test.each([
+  ['https://example.com/', 'https://example.com/'],
+  ['matrix:r/room:example.org', '#room:example.org'],
+])('shows no tooltip for %s when its address is already visible', async (href, label) => {
   render(FormattedBodyHarness, {
-    props: { html: '<p><a href="https://example.com/">https://example.com/</a></p>', entries: [] },
+    props: { html: `<p><a href="${href}">${label}</a></p>`, entries: [] },
   });
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  await user.hover(screen.getByRole('link', { name: 'https://example.com/' }));
+  await user.hover(screen.getByRole('link', { name: label }));
   await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(document.querySelector('.tooltip')).not.toBeInTheDocument();
+});
+
+test('does not show a Matrix destination through a concealed spoiler', async () => {
+  render(FormattedBodyHarness, {
+    props: {
+      html: '<span data-mx-spoiler><a href="matrix:r/secret:example.org">Room</a></span>',
+      entries: [],
+    },
+  });
+  await tick();
+
+  await user.hover(screen.getByRole('link', { name: 'Room' }));
+  await tick();
 
   expect(document.querySelector('.tooltip')).not.toBeInTheDocument();
 });
@@ -741,7 +839,7 @@ test('the sender zone reaches a time chip without rebuilding the body', async ()
 
   expect(document.querySelector('.time-chip')).toBe(chip);
   expect(spoiler.ariaPressed).toBe('false');
-  expect(chip.ariaLabel).toContain('Asia/Tokyo');
+  expect(chip.ariaLabel).toBe(formatMessageTimestamp(0));
   expect(document.querySelector('.tooltip')?.textContent).toContain('Asia/Tokyo');
 });
 

@@ -2,10 +2,11 @@
   import { tick, untrack, type Component } from 'svelte';
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
-  import type { NotificationModeView, RoomListItemView } from '#src/generated/protocol';
+  import type { RoomListItemView } from '#src/generated/protocol';
   import { useCoreClient } from '#lib/core/context.js';
   import { i18n } from '#lib/i18n.js';
   import { roomSectionPath } from '#lib/rooms/permalink.js';
+  import { HOME_SECTION } from '#lib/rooms/last-room.js';
   import { voiceChat } from '#lib/features/room/voice-chat.svelte.js';
   import {
     findRoomByPathId,
@@ -14,15 +15,18 @@
     useRoomList,
   } from '#lib/rooms/room-list.svelte.js';
   import { SvelteSet } from 'svelte/reactivity';
-  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
   import ChatCircleIcon from 'phosphor-svelte/lib/ChatCircleIcon';
   import ChatsIcon from 'phosphor-svelte/lib/ChatsIcon';
-  import BellIcon from 'phosphor-svelte/lib/BellIcon';
-  import BellRingingIcon from 'phosphor-svelte/lib/BellRingingIcon';
-  import BellSlashIcon from 'phosphor-svelte/lib/BellSlashIcon';
+  import EyeSlashIcon from 'phosphor-svelte/lib/EyeSlashIcon';
+  import ThreadIcon from 'phosphor-svelte/lib/ScribbleLoopIcon';
+  import PushPinIcon from 'phosphor-svelte/lib/PushPinIcon';
+  import PushPinSlashIcon from 'phosphor-svelte/lib/PushPinSlashIcon';
   import HashIcon from 'phosphor-svelte/lib/HashIcon';
   import HouseIcon from 'phosphor-svelte/lib/HouseIcon';
   import SquaresFourIcon from 'phosphor-svelte/lib/SquaresFourIcon';
+  import IconContext from 'phosphor-svelte/lib/IconContext';
+  import ActionMenu from '#lib/ui/primitives/ActionMenu.svelte';
+  import ActionMenuItem from '#lib/ui/primitives/ActionMenuItem.svelte';
   import { cursorAnchor, type CursorAnchor } from '#lib/ui/cursor-anchor.js';
   import { longPress, mouseContextMenu } from '#lib/ui/long-press.svelte.js';
   import { isDeclining } from '#lib/rooms/invites.svelte.js';
@@ -31,46 +35,50 @@
   import { hasUnread, NO_UNREAD } from '#lib/rooms/unread.js';
   import { resolveUserStatus } from '#lib/rooms/user-status.js';
   import { whenVisible } from '#lib/ui/when-visible.js';
-  import ActionMenuItem from '#lib/ui/primitives/ActionMenuItem.svelte';
-  import ActionMenuSeparator from '#lib/ui/primitives/ActionMenuSeparator.svelte';
-  import { ROOM_SORTS, ROOM_SORT_LABELS } from '#lib/rooms/room-sort.js';
   import Avatar from '#lib/ui/primitives/Avatar.svelte';
   import PresenceDot from '#lib/ui/primitives/PresenceDot.svelte';
   import RoomIcon from '#lib/ui/primitives/RoomIcon.svelte';
-  import StatusBadge from '#lib/ui/primitives/StatusBadge.svelte';
   import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
-  import TypingDots from '#lib/ui/primitives/TypingDots.svelte';
-  import UnreadBadge from '#lib/ui/primitives/UnreadBadge.svelte';
   import { rovingFocus } from '#lib/ui/roving-focus.js';
   import LeaveRoomDialog from '#lib/features/room/LeaveRoomDialog.svelte';
-  import { preferences, setPreference } from '#lib/settings/preferences.svelte.js';
+  import { preferences } from '#lib/settings/preferences.svelte.js';
   import { isBridgedSpace } from '#lib/rooms/bridged-spaces.svelte.js';
+  import { unreadDot } from '#lib/rooms/quiet-rooms.svelte.js';
   import {
     spaceBridgeBadgeChanges,
     spaceHidesBridgeBadges,
   } from '#lib/rooms/space-bridge-badges.svelte.js';
   import { roomIconOverride, showsRoomAvatar } from '#lib/rooms/room-appearance.svelte.js';
+  import RoomInviteDialog from '#lib/features/room/RoomInviteDialog.svelte';
   import RoomSettingsDialog from '#lib/features/room/settings/RoomSettingsDialog.svelte';
   import { goToPage } from '#lib/features/room/room-navigation.js';
-  import CalendarRowEvent from '#lib/features/calendar/CalendarRowEvent.svelte';
   import SpaceEvents from '#lib/features/calendar/SpaceEvents.svelte';
 
   import type { CallVoiceState } from '#lib/features/call/call-session.svelte.js';
   import CallVolumePopover from '#lib/features/call/CallVolumePopover.svelte';
   import MentionProfile from '#lib/features/room/members/MentionProfile.svelte';
-  import { byName, participantKeys } from '#lib/features/call/participant-keys.js';
+  import GroupAvatar from './GroupAvatar.svelte';
   import BridgeBadge from './BridgeBadge.svelte';
   import CallParticipantList from './CallParticipantList.svelte';
+  import CategoryCaret from './CategoryCaret.svelte';
   import ReplacedRooms from './ReplacedRooms.svelte';
   import RoomInvites from './RoomInvites.svelte';
   import RoomNavActions from './RoomNavActions.svelte';
+  import RoomListHeading from './RoomListHeading.svelte';
+  import RoomListMenuItems from './RoomListMenuItems.svelte';
+  import RoomListSortButton from './RoomListSortButton.svelte';
   import RoomNavHeader from './RoomNavHeader.svelte';
+  import RoomOptionsButton from './RoomOptionsButton.svelte';
   import RoomOptionsMenu from './RoomOptionsMenu.svelte';
-  import ChecksIcon from 'phosphor-svelte/lib/ChecksIcon';
-  import { groupsFavourites, setGroupsFavourites } from '#lib/rooms/favourite-grouping.svelte.js';
-  import DotsThreeVerticalIcon from 'phosphor-svelte/lib/DotsThreeVerticalIcon';
-  import GearIcon from 'phosphor-svelte/lib/GearIcon';
-  import SignOutIcon from 'phosphor-svelte/lib/SignOutIcon';
+  import RoomRowStatus from './RoomRowStatus.svelte';
+  import RoomRowText, { type RoomPreview } from './RoomRowText.svelte';
+  import RoomThreadLines from './RoomThreadLines.svelte';
+  import {
+    saveThreadSidebarAction,
+    useThreadSidebar,
+    type SidebarThread,
+  } from './thread-sidebar.svelte.js';
+  import RoomVoiceLive from './RoomVoiceLive.svelte';
   import { claimedRoomIds, markRoomsRead } from './nav-rooms.js';
   import { roomRow, type RoomNavRow } from './nav-rows.js';
   import { PeerProfiles } from './peer-profiles.svelte.js';
@@ -82,20 +90,30 @@
     spaceTreeNodes,
     type SpaceTreeRoom,
     type SpaceTreeSpace,
-    type Thread,
   } from './space-tree.js';
+  import { unreadLabel } from './unread-label.js';
 
-  const MAX_VOICE_FACES = 3;
   const ESTIMATED_ROW_HEIGHT = 36;
   const OVERSCAN_ROWS = 10;
   const WARM_DWELL_MS = 300;
-  let contextRoom = $state<RoomListItemView | null>(null);
+  let contextRoom = $state.raw<RoomListItemView | null>(null);
   let contextParentSpaceId = $state<string | null>(null);
   let contextAnchor = $state.raw<HTMLElement | CursorAnchor | null>(null);
   let contextOpen = $state(false);
   let optionsRoomId = $derived(
     contextOpen && contextAnchor !== null && 'focus' in contextAnchor
       ? (contextRoom?.room_id ?? null)
+      : null
+  );
+  let contextThread = $state.raw<{ roomId: string; thread: SidebarThread } | null>(null);
+  let contextThreadAnchor = $state.raw<HTMLElement | CursorAnchor | null>(null);
+  let contextThreadOpen = $state(false);
+  let optionsThreadKey = $derived(
+    contextThreadOpen &&
+      contextThreadAnchor !== null &&
+      'focus' in contextThreadAnchor &&
+      contextThread
+      ? `${contextThread.roomId}:${contextThread.thread.id}`
       : null
   );
 
@@ -106,6 +124,7 @@
   ): void {
     event.preventDefault();
     event.stopPropagation();
+    contextThreadOpen = false;
     contextRoom = room;
     contextParentSpaceId = parentSpaceId;
     contextAnchor = cursorAnchor(event);
@@ -121,10 +140,48 @@
       contextOpen = false;
       return;
     }
+    contextThreadOpen = false;
     contextRoom = room;
     contextParentSpaceId = parentSpaceId;
     contextAnchor = trigger;
     contextOpen = true;
+  }
+
+  function openThreadContextMenu(
+    event: MouseEvent,
+    target: { roomId: string; thread: SidebarThread }
+  ): void {
+    event.preventDefault();
+    event.stopPropagation();
+    contextOpen = false;
+    contextThread = target;
+    contextThreadAnchor = cursorAnchor(event);
+    contextThreadOpen = true;
+  }
+
+  function toggleThreadOptionsMenu(
+    trigger: HTMLElement,
+    target: { roomId: string; thread: SidebarThread }
+  ): void {
+    if (
+      optionsThreadKey === `${target.roomId}:${target.thread.id}` &&
+      contextThreadAnchor === trigger
+    ) {
+      contextThreadOpen = false;
+      return;
+    }
+    contextOpen = false;
+    contextThread = target;
+    contextThreadAnchor = trigger;
+    contextThreadOpen = true;
+  }
+
+  function threadDiscovery(roomId: string, revision: string, includeActive: boolean) {
+    return whenVisible(
+      () => threadSidebar?.discover(roomId, revision, includeActive),
+      '0px',
+      WARM_DWELL_MS
+    );
   }
 
   interface Props {
@@ -138,6 +195,8 @@
     callParticipants?: readonly string[];
     callVoiceStates?: ReadonlyMap<string, CallVoiceState>;
     onCallVolume?: (userId: string, volume: number) => void;
+    pinnedSpaceIds?: ReadonlySet<string>;
+    onTogglePin?: (roomId: string) => void;
   }
 
   let {
@@ -151,6 +210,8 @@
     callParticipants = [],
     callVoiceStates = new Map(),
     onCallVolume,
+    pinnedSpaceIds = new Set(),
+    onTogglePin,
   }: Props = $props();
 
   let volumeTarget = $state<{ userId: string; name: string; anchor: HTMLElement } | null>(null);
@@ -176,6 +237,8 @@
     participantOpen = true;
   }
   const roomList = useRoomList();
+  const threadSidebar = useThreadSidebar();
+  let linkedThread = $derived(page.url.searchParams.get('thread'));
   const core = useCoreClient();
   const presenceStore = usePresenceStore();
 
@@ -186,17 +249,38 @@
     return peers.length === 1 ? peers[0] : null;
   }
 
-  function messagePreview(room: RoomListItemView): string | null {
+  const PREVIEW_LABELS = {
+    image: 'nav.previewImage',
+    video: 'nav.previewVideo',
+    audio: 'nav.previewAudio',
+    voice: 'nav.previewVoice',
+    file: 'nav.previewFile',
+    sticker: 'nav.previewSticker',
+    location: 'nav.previewLocation',
+    poll: 'nav.previewPoll',
+  } as const;
+
+  function messagePreview(room: RoomListItemView): RoomPreview | null {
     const mode = preferences.messagePreviews;
     const shown = room.is_direct
       ? mode === 'direct' || mode === 'all'
       : mode === 'rooms' || mode === 'all';
-    return shown ? room.latest_event?.body || null : null;
+    const event = room.latest_event;
+    if (!shown || !event) return null;
+    let text = event.body;
+    if (event.kind !== 'text') {
+      const label = i18n.t(PREVIEW_LABELS[event.kind]);
+      text = text ? i18n.t('nav.previewCaption', { label, caption: text }) : label;
+    }
+    if (!text) return null;
+    const sender = event.own ? i18n.t('nav.previewYou') : event.sender_label;
+    return { sender, text, emotes: event.emotes };
   }
 
   const peerProfiles = new PeerProfiles(core);
   let settingsRoomId = $state<string | null>(null);
   let leaveRoomId = $state<string | null>(null);
+  let inviteRoomId = $state<string | null>(null);
 
   let directSection = $derived(pathname.startsWith('/direct'));
   let unspacedSection = $derived(pathname.startsWith('/rooms'));
@@ -246,6 +330,7 @@
   // Held by id so the dialogs follow the live summary.
   let settingsRoom = $derived(roomList.byId(settingsRoomId) ?? null);
   let leaveRoom = $derived(roomList.byId(leaveRoomId) ?? null);
+  let inviteRoom = $derived(roomList.byId(inviteRoomId) ?? null);
 
   type RoomNavItem = SpaceTreeSpace | RoomNavRow;
 
@@ -284,7 +369,6 @@
   let spacedRoomIds = $derived(claimedRoomIds(roomList.rooms));
   let sortKey = $derived<'directSort' | 'roomSort'>(directSection ? 'directSort' : 'roomSort');
   let favouriteView = $derived(activeSpaceId ?? section);
-  let groupFavourites = $derived(groupsFavourites(favouriteView));
   let navSection = $derived(roomList.section(favouriteView));
 
   function listedRooms(roomIds: readonly string[] | undefined): RoomListItemView[] {
@@ -315,7 +399,10 @@
     )
   );
   $effect(() => {
-    publishVisibleRoomOrder(sectionRooms.map((row) => row.roomId));
+    publishVisibleRoomOrder(
+      sectionRooms.map((row) => row.roomId),
+      section === 'home' ? HOME_SECTION : activeSpaceId
+    );
   });
   let calendarRooms = $derived(listedRooms(navSection?.calendars));
   let subspaces = $derived(
@@ -412,13 +499,6 @@
     return resolve('/(app)/home/[roomId]', { roomId: routeId });
   }
 
-  function notificationChip(mode: NotificationModeView): { icon: Component; label: string } {
-    if (mode === 'mute') return { icon: BellSlashIcon, label: 'room.notifyMute' };
-    if (mode === 'mentions') return { icon: BellIcon, label: 'room.notifyMentions' };
-
-    return { icon: BellRingingIcon, label: 'room.notifyAll' };
-  }
-
   function toggleCategory(key: string) {
     if (closedCategories.has(key)) closedCategories.delete(key);
     else closedCategories.add(key);
@@ -466,88 +546,35 @@
     {onNavigate}
     titleIcon={TitleIcon}
     {collapsed}
+    actions={activeSpace ? undefined : roomSortControl}
     menuItems={listMenuItems}
   />
 
   {#snippet listMenuItems()}
-    <ActionMenuItem disabled={!sectionUnread} onSelect={markSectionRead}>
-      <ChecksIcon />
-      {i18n.t('common.markAsRead')}
-    </ActionMenuItem>
-    <ActionMenuItem
-      closeOnSelect={false}
-      checked={groupFavourites}
-      onSelect={() => {
-        setGroupsFavourites(favouriteView, !groupFavourites);
+    <RoomListMenuItems
+      {activeSpace}
+      {favouriteView}
+      markReadDisabled={!sectionUnread}
+      onMarkRead={markSectionRead}
+      onInvite={(room) => {
+        inviteRoomId = room.room_id;
       }}
-    >
-      <span class="menu-check" aria-hidden="true">{groupFavourites ? '✓' : ''}</span>
-      <span>{i18n.t('nav.groupFavourites')}</span>
-    </ActionMenuItem>
-    <ActionMenuSeparator />
-    {#if !activeSpace}
-      {#each ROOM_SORTS as option (option)}
-        <ActionMenuItem
-          checked={preferences[sortKey] === option}
-          onSelect={() => {
-            setPreference(sortKey, option);
-          }}
-        >
-          <span class="menu-check" aria-hidden="true"
-            >{preferences[sortKey] === option ? '✓' : ''}</span
-          >
-          <span>{i18n.t(ROOM_SORT_LABELS[option])}</span>
-        </ActionMenuItem>
-      {/each}
-    {:else}
-      <ActionMenuItem
-        onSelect={() => {
-          openSettings(activeSpace);
-        }}
-      >
-        <GearIcon />
-        {i18n.t('room.menuSettings')}
-      </ActionMenuItem>
-      <ActionMenuItem
-        destructive
-        onSelect={() => {
-          openLeave(activeSpace);
-        }}
-      >
-        <SignOutIcon />
-        {i18n.t('room.menuLeaveSpace')}
-      </ActionMenuItem>
-    {/if}
+      onSettings={openSettings}
+      onLeave={openLeave}
+    />
   {/snippet}
 
-  {#snippet threadLines(threads: readonly Thread[] | undefined)}
-    {#if !collapsed && threads}
-      {#each threads as thread (thread.level)}
-        <span class="thread" style:--thread-level={thread.level} aria-hidden="true">
-          {#if thread.kind !== 'last'}<span class="thread-line"></span>{/if}
-          {#if thread.kind !== 'through'}<span class="thread-elbow"></span>{/if}
-        </span>
-      {/each}
-    {/if}
+  {#snippet roomSortControl()}
+    <RoomListSortButton {sortKey} />
   {/snippet}
 
   {#snippet optionsButton(room: RoomListItemView, parentSpaceId: string | null)}
-    {@const open = optionsRoomId === room.room_id}
-    <button
-      type="button"
-      class="room-options-trigger selection-open"
-      tabindex="-1"
-      aria-hidden="true"
-      aria-label={i18n.t('room.menuLabel')}
-      aria-haspopup="menu"
-      aria-expanded={open}
-      data-state={open ? 'open' : 'closed'}
-      onclick={(event) => {
-        toggleOptionsMenu(event.currentTarget, room, parentSpaceId);
+    <RoomOptionsButton
+      open={optionsRoomId === room.room_id}
+      onToggle={(trigger) => {
+        toggleOptionsMenu(trigger, room, parentSpaceId);
       }}
-    >
-      <DotsThreeVerticalIcon />
-    </button>
+    />
   {/snippet}
 
   {#snippet navRoom(item: RoomNavRow, sectionClosed: boolean, position?: number)}
@@ -560,14 +587,7 @@
     {@const mentions = counts.highlight}
     {@const unread = counts.unread}
     {@const marked = counts.marked ?? false}
-    {@const unreadLabel =
-      mentions > 0
-        ? i18n.t('nav.unreadMentions', { count: mentions })
-        : unread > 0
-          ? i18n.t('nav.unreadMessages', { count: unread })
-          : marked
-            ? i18n.t('nav.markedUnread')
-            : null}
+    {@const countLabel = unreadLabel(counts)}
     {@const participants =
       item.roomId === callRoomId && callParticipants.length > 0
         ? callParticipants
@@ -592,8 +612,11 @@
     {@const peerStatus = peerId ? resolveUserStatus(peerProfiles.get(peerId), peerPresence) : null}
     {@const preview = room ? messagePreview(room) : null}
     {@const closed = sectionClosed && !(room !== undefined && (active || hasUnread(counts)))}
+    {@const sidebarThreads = !collapsed && !closed ? (threadSidebar?.rows(item.roomId) ?? []) : []}
+    {@const selectedThread = active && sidebarThreads.some((thread) => thread.id === linkedThread)}
+    {@const revision = room?.latest_event?.event_id ?? ''}
     <div class={['room-row-wrap', { 'closed-row': closed }]} data-row-key={item.key}>
-      {@render threadLines(item.threads)}
+      <RoomThreadLines threads={item.threads} {collapsed} />
       {#snippet roomTrigger({ props }: { props: Record<string, unknown> })}
         <!-- eslint-disable svelte/no-navigation-without-resolve -- roomHref() resolves the route itself -->
         <a
@@ -620,11 +643,14 @@
           style:--room-depth={collapsed ? 0 : item.depth}
           onclick={() => onNavigate?.(href)}
           aria-label={collapsed
-            ? unreadLabel
-              ? `${roomLabel}, ${unreadLabel}`
+            ? countLabel
+              ? `${roomLabel}, ${countLabel}`
               : roomLabel
             : undefined}
-          aria-current={active ? 'page' : undefined}
+          aria-current={active && !selectedThread ? 'page' : undefined}
+          {@attach threadSidebar && room?.state === 'joined' && !collapsed && !closed
+            ? threadDiscovery(item.roomId, revision, preferences.showActiveThreadsInSidebar)
+            : undefined}
           {@attach peerId !== null && !collapsed
             ? whenVisible(() => {
                 peerProfiles.request(peerId);
@@ -659,6 +685,8 @@
                 >
                   {@render glyph()}
                 </Avatar>
+              {:else if room && room.group_members.length > 0}
+                <GroupAvatar members={room.group_members.slice(0, 2)} />
               {:else if room && (room.is_direct || unspacedSection)}
                 <Avatar class="room-avatar-icon" id={item.roomId} {name} size="small" />
               {:else}
@@ -700,100 +728,24 @@
             </span>
           {/if}
           {#if !collapsed}
-            <span class="room-text">
-              <span class="room-name"><bdi>{name}</bdi></span>
-              {#if preview}
-                <span class="room-topic"><bdi>{preview}</bdi></span>
-              {:else if room?.is_direct && room.topic && preferences.showDmTopics}
-                <span class="room-topic"><bdi>{room.topic}</bdi></span>
-              {:else if peerStatus}
-                {@const peerStatusLabel = [peerStatus?.emoji, peerStatus?.text]
-                  .filter(Boolean)
-                  .join(' ')}
-                <Tooltip label={peerStatusLabel}>
-                  {#snippet trigger({ props })}
-                    <span {...props} class="room-topic">
-                      {#if peerStatus?.emoji}<span class="room-status-emoji"
-                          >{peerStatus.emoji}</span
-                        >{/if}{peerStatus?.text}
-                    </span>
-                  {/snippet}
-                </Tooltip>
-              {:else if room?.room_kind === 'calendar' && preferences.showSpaceEvents}
-                <CalendarRowEvent roomId={room.room_id} />
-              {/if}
-            </span>
+            <RoomRowText {name} {room} {preview} {peerStatus} />
           {/if}
           {#if room && live > 0 && (!collapsed || voicePlacement === 'inline')}
-            <span
-              class="voice-live"
-              role="img"
-              aria-label={i18n.t('nav.voiceLive', { count: live })}
-            >
-              {#if voicePlacement !== 'below'}
-                {@const faces = byName(
-                  participants,
-                  (userId) => peerProfiles.get(userId)?.display_name
-                ).slice(0, MAX_VOICE_FACES)}
-                {@const faceKeys = participantKeys(faces)}
-                <span
-                  class="voice-faces"
-                  {@attach whenVisible(() => {
-                    for (const userId of faces) peerProfiles.request(userId);
-                  })}
-                >
-                  {#each faces as userId, index (faceKeys[index])}
-                    {@const profile = peerProfiles.get(userId)}
-                    <Avatar
-                      class="voice-face"
-                      src={profile?.avatar_url ?? null}
-                      name={profile?.display_name ?? userId}
-                      id={userId}
-                    />
-                  {/each}
-                </span>
-              {/if}
-              {#if !collapsed}
-                <StatusBadge label={String(live)} variant="primary" />
-              {/if}
-            </span>
-          {/if}
-          {#if !collapsed}
-            <span class="room-status">
-              {#if typing}
-                <span class="room-typing"><TypingDots /></span>
-              {:else}
-                <UnreadBadge
-                  {counts}
-                  dm={room?.is_direct ?? false}
-                  role="img"
-                  aria-label={mentions > 0
-                    ? i18n.t('nav.unreadMentions', { count: mentions })
-                    : unread > 0
-                      ? i18n.t('nav.unreadMessages', { count: unread })
-                      : i18n.t('nav.markedUnread')}
-                />
-              {/if}
-              {#if notifyMode}
-                {@const chip = notificationChip(notifyMode)}
-                <span class="room-mode" role="img" aria-label={i18n.t(chip.label)}>
-                  <chip.icon />
-                </span>
-              {/if}
-            </span>
-          {:else if !typing}
-            <UnreadBadge
-              class="room-collapsed-badge"
-              {counts}
-              dm={room?.is_direct ?? false}
-              role="img"
-              aria-label={mentions > 0
-                ? i18n.t('nav.unreadMentions', { count: mentions })
-                : unread > 0
-                  ? i18n.t('nav.unreadMessages', { count: unread })
-                  : i18n.t('nav.markedUnread')}
+            <RoomVoiceLive
+              {participants}
+              showFaces={voicePlacement !== 'below'}
+              showCount={!collapsed}
+              profiles={peerProfiles}
             />
           {/if}
+          <RoomRowStatus
+            {counts}
+            dm={room?.is_direct ?? false}
+            {typing}
+            {collapsed}
+            {notifyMode}
+            dotHidden={room !== undefined && unreadDot(room.room_id) === 'hide'}
+          />
         </a>
         <!-- eslint-enable svelte/no-navigation-without-resolve -->
       {/snippet}
@@ -828,6 +780,72 @@
         {/if}
       {/if}
     </div>
+    {#if sidebarThreads.length > 0}
+      {@const parentLines = (item.threads ?? [])
+        .filter((line) => line.kind !== 'last')
+        .map((line) => ({ ...line, kind: 'through' as const }))}
+      {#each sidebarThreads as thread, index (thread.id)}
+        {@const name = thread.title || i18n.t('timeline.thread')}
+        {@const threadHref =
+          href +
+          '?thread=' +
+          encodeURIComponent(thread.id) +
+          (room?.room_kind === 'calendar' ? '&timeline=events' : '')}
+        {@const isSelected = active && linkedThread === thread.id}
+        {@const threadTarget = { roomId: item.roomId, thread }}
+        <div class="room-row-wrap thread-row">
+          <RoomThreadLines
+            threads={[
+              ...parentLines,
+              {
+                level: item.depth,
+                kind: index === sidebarThreads.length - 1 ? ('last' as const) : ('branch' as const),
+              },
+            ]}
+            collapsed={false}
+          />
+          <!-- eslint-disable svelte/no-navigation-without-resolve -- the parent room href is already resolved -->
+          <a
+            class={['room-row selection-current selection-layer', { unread: thread.unread }]}
+            style:--room-depth={item.depth + 1}
+            href={threadHref}
+            role="treeitem"
+            aria-level={3}
+            aria-selected={isSelected}
+            aria-current={isSelected ? 'page' : undefined}
+            aria-label={thread.unread ? i18n.t('nav.unreadThread', { name }) : name}
+            oncontextmenu={mouseContextMenu((event) => {
+              openThreadContextMenu(event, threadTarget);
+            })}
+            {@attach longPress({
+              onPress: (event) => {
+                openThreadContextMenu(event, threadTarget);
+              },
+            })}
+            onclick={() => onNavigate?.(threadHref)}
+          >
+            <ThreadIcon size={16} aria-hidden="true" />
+            <span>{name}</span>
+            {#if thread.pinned || thread.unread}
+              <span class="thread-row-status" aria-hidden="true">
+                {#if thread.pinned}<PushPinIcon size={14} weight="fill" />{/if}
+                {#if thread.unread}<span class="thread-unread-dot"></span>{/if}
+              </span>
+            {/if}
+          </a>
+          <!-- eslint-enable svelte/no-navigation-without-resolve -->
+          <span class="room-options-slot">
+            <RoomOptionsButton
+              label={i18n.t('timeline.threadMenu')}
+              open={optionsThreadKey === `${item.roomId}:${thread.id}`}
+              onToggle={(trigger) => {
+                toggleThreadOptionsMenu(trigger, threadTarget);
+              }}
+            />
+          </span>
+        </div>
+      {/each}
+    {/if}
     {#if room && (voicePlacement === 'both' || voicePlacement === 'below') && live > 0}
       <CallParticipantList
         {participants}
@@ -852,7 +870,7 @@
     })}
     {@const active = pathname === href}
     <div class="room-row-wrap" data-row-key={item.key}>
-      {@render threadLines(item.threads)}
+      <RoomThreadLines threads={item.threads} {collapsed} />
       {#snippet linkTrigger({ props }: { props: Record<string, unknown> })}
         <a
           {...props}
@@ -890,7 +908,7 @@
             </Avatar>
           </span>
           {#if !collapsed}
-            <span class="room-text"><span class="room-name"><bdi>{name}</bdi></span></span>
+            <RoomRowText {name} />
             <span class="room-link-icon" aria-hidden="true"><SquaresFourIcon /></span>
           {/if}
         </a>
@@ -929,24 +947,14 @@
     >
       {#if favourites.length > 0}
         {#if !collapsed}
-          <!-- svelte-ignore a11y_role_has_required_aria_props -->
-          <button
-            type="button"
-            role="treeitem"
-            aria-level="1"
-            class="rooms-heading selection-layer"
-            aria-expanded={!favouritesClosed}
-            data-state={favouritesClosed ? 'closed' : 'open'}
-            aria-controls={favouritesListId}
-            onclick={() => {
+          <RoomListHeading
+            label={i18n.t('nav.favourites')}
+            closed={favouritesClosed}
+            controls={favouritesListId}
+            onToggle={() => {
               favouritesClosed = !favouritesClosed;
             }}
-          >
-            <span class="rooms-heading-label">{i18n.t('nav.favourites')}</span>
-            <span class={['category-caret', { closed: favouritesClosed }]} aria-hidden="true"
-              ><CaretDownIcon /></span
-            >
-          </button>
+          />
         {/if}
         <div id={favouritesListId} class={['room-list favourites', { collapsed }]}>
           {#each favourites as item (item.key)}
@@ -956,24 +964,14 @@
       {/if}
 
       {#if !collapsed}
-        <!-- svelte-ignore a11y_role_has_required_aria_props -->
-        <button
-          type="button"
-          role="treeitem"
-          aria-level="1"
-          class="rooms-heading selection-layer"
-          aria-expanded={!roomsClosed}
-          data-state={roomsClosed ? 'closed' : 'open'}
-          aria-controls={roomListId}
-          onclick={() => {
+        <RoomListHeading
+          label={listLabel}
+          closed={roomsClosed}
+          controls={roomListId}
+          onToggle={() => {
             roomsClosed = !roomsClosed;
           }}
-        >
-          <span class="rooms-heading-label">{listLabel}</span>
-          <span class={['category-caret', { closed: roomsClosed }]} aria-hidden="true"
-            ><CaretDownIcon /></span
-          >
-        </button>
+        />
       {/if}
 
       <div id={roomListId}>
@@ -1005,7 +1003,7 @@
                 {@const name = item.room.display_name}
                 {@const isClosed = closedCategories.has(item.key)}
                 <div class="room-row-wrap">
-                  {@render threadLines(item.threads)}
+                  <RoomThreadLines threads={item.threads} {collapsed} />
                   {#snippet categoryTrigger({ props }: { props: Record<string, unknown> })}
                     <button
                       {...props}
@@ -1029,9 +1027,7 @@
                       }}
                     >
                       {#if !collapsed}<span class="category-name"><bdi>{name}</bdi></span>{/if}
-                      <span class={['category-caret', { closed: isClosed }]} aria-hidden="true"
-                        ><CaretDownIcon /></span
-                      >
+                      <CategoryCaret closed={isClosed} />
                     </button>
                   {/snippet}
                   {#if collapsed}
@@ -1086,6 +1082,14 @@
   }}
 />
 
+<RoomInviteDialog
+  open={inviteRoom !== null}
+  room={inviteRoom}
+  onOpenChange={(open) => {
+    if (!open) inviteRoomId = null;
+  }}
+/>
+
 <LeaveRoomDialog
   open={leaveRoom !== null}
   room={leaveRoom}
@@ -1096,6 +1100,12 @@
 
 {#if contextRoom}
   {@const fromTrigger = contextAnchor !== null && 'focus' in contextAnchor}
+  {@const pinRoomId = contextRoom.room_id}
+  {@const pinnable =
+    onTogglePin !== undefined &&
+    contextRoom.room_kind === 'space' &&
+    contextRoom.state === 'joined'}
+  {@const pinned = pinnedSpaceIds.has(pinRoomId)}
   {#key contextRoom.room_id}
     <RoomOptionsMenu
       room={contextRoom}
@@ -1107,7 +1117,58 @@
       onSettings={openSettings}
       onLeave={openLeave}
       onLobby={openLobby}
+      onPin={pinnable && !pinned ? () => onTogglePin?.(pinRoomId) : undefined}
+      onUnpin={pinnable && pinned ? () => onTogglePin?.(pinRoomId) : undefined}
     />
+  {/key}
+{/if}
+
+{#if contextThread && threadSidebar}
+  {@const fromTrigger = contextThreadAnchor !== null && 'focus' in contextThreadAnchor}
+  {@const target = contextThread}
+  {#key `${target.roomId}:${target.thread.id}`}
+    <ActionMenu
+      bind:open={contextThreadOpen}
+      label={i18n.t('timeline.threadMenu')}
+      class="room-options-menu"
+      anchor={contextThreadAnchor}
+      align={fromTrigger ? 'end' : 'start'}
+      side={fromTrigger ? 'bottom' : 'right'}
+    >
+      <IconContext values={{ 'aria-hidden': 'true' }}>
+        <ActionMenuItem
+          disabled={!threadSidebar.ready}
+          onSelect={() => {
+            saveThreadSidebarAction(
+              threadSidebar.togglePin(target.roomId, target.thread.id),
+              'timeline.threadPinFailed',
+              'personal pin'
+            );
+          }}
+        >
+          {#if threadSidebar.hasPin(target.roomId, target.thread.id)}
+            <PushPinSlashIcon />
+            {i18n.t('timeline.threadUnpin')}
+          {:else}
+            <PushPinIcon />
+            {i18n.t('timeline.threadPin')}
+          {/if}
+        </ActionMenuItem>
+        <ActionMenuItem
+          disabled={!threadSidebar.ready}
+          onSelect={() => {
+            saveThreadSidebarAction(
+              threadSidebar.setDismissed(target.roomId, target.thread.id, true),
+              'timeline.threadDismissFailed',
+              'sidebar dismissal'
+            );
+          }}
+        >
+          <EyeSlashIcon />
+          {i18n.t('timeline.threadDismissSidebar')}
+        </ActionMenuItem>
+      </IconContext>
+    </ActionMenu>
   {/key}
 {/if}
 
@@ -1128,30 +1189,10 @@
     margin: 0;
   }
 
-  .category-caret {
-    align-items: center;
-    display: inline-flex;
-    flex: 0 0 var(--icon-size-large);
-    height: var(--icon-size-large);
-    justify-content: center;
-    line-height: 0;
-    width: var(--icon-size-large);
-  }
-
   @media (prefers-reduced-motion: no-preference) {
-    .category-caret {
-      transition: transform var(--duration-fast) var(--ease-smooth-out);
-    }
-
     .room-row-wrap {
       transition: background-color var(--motion-fast) var(--motion-easing-standard);
     }
-  }
-
-  .rooms-heading :global(svg) {
-    display: block;
-    height: var(--icon-size-large);
-    width: var(--icon-size-large);
   }
 
   .room-nav-content {
@@ -1165,40 +1206,6 @@
     display: grid;
     justify-items: inherit;
     min-width: 0;
-  }
-
-  .rooms-heading {
-    align-items: center;
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius);
-    color: inherit;
-    cursor: pointer;
-    display: flex;
-    font: inherit;
-    gap: var(--space-100);
-    height: var(--control-height-medium);
-    margin-inline: var(--space-200);
-    opacity: var(--opacity-p300);
-    padding: 0 var(--space-200);
-    text-align: start;
-    width: calc(100% - var(--space-200) * 2);
-  }
-
-  .rooms-heading:focus-visible {
-    background: var(--bg-container-hover);
-  }
-
-  @media (any-hover: hover) and (any-pointer: fine) {
-    .rooms-heading:hover {
-      background: var(--bg-container-hover);
-    }
-  }
-
-  .rooms-heading-label {
-    font-size: var(--font-size-label);
-    font-weight: var(--font-weight-500);
-    margin: 0;
   }
 
   .empty-rooms {
@@ -1231,32 +1238,16 @@
     margin-inline-end: var(--space-100);
   }
 
-  .room-status {
-    align-items: center;
-    display: flex;
-    flex: none;
-    gap: var(--space-100);
-    justify-content: center;
-  }
-
-  .room-status:has(> *) {
-    min-width: 1.5rem;
-  }
-
-  .room-status :global(.unread-badge-dot) {
-    background-clip: content-box;
-    padding-inline: var(--space-200);
-    width: var(--space-600);
-  }
-
   @media (any-hover: hover) and (any-pointer: fine) and (not (any-pointer: coarse)) {
     .room-list:not(.collapsed)
-      .room-row-wrap:not(:has(.room-status > *, .voice-live)):is(:hover, :focus-within)
+      .room-row-wrap:not(
+        :has(:global(.room-status > *), :global(.voice-live), .thread-row-status)
+      ):is(:hover, :focus-within)
       .room-row,
     .room-list:not(.collapsed)
-      .room-row-wrap:not(:has(.room-status > *, .voice-live)):has(
-        :global(.room-options-trigger[data-state='open'])
-      )
+      .room-row-wrap:not(
+        :has(:global(.room-status > *), :global(.voice-live), .thread-row-status)
+      ):has(:global(.room-options-trigger[data-state='open']))
       .room-row {
       padding-inline-end: calc(var(--space-100) + var(--space-600));
     }
@@ -1283,12 +1274,10 @@
       pointer-events: auto;
     }
 
-    .room-row-wrap:hover .room-status,
-    .room-row-wrap:hover .voice-live,
-    .room-row-wrap:focus-within .room-status,
-    .room-row-wrap:focus-within .voice-live,
-    .room-row-wrap:has(:global(.room-options-trigger[data-state='open'])) .room-status,
-    .room-row-wrap:has(:global(.room-options-trigger[data-state='open'])) .voice-live {
+    .room-row-wrap:is(:hover, :focus-within)
+      :is(:global(.room-status), :global(.voice-live), .thread-row-status),
+    .room-row-wrap:has(:global(.room-options-trigger[data-state='open']))
+      :is(:global(.room-status), :global(.voice-live), .thread-row-status) {
       opacity: 0;
       pointer-events: none;
     }
@@ -1318,40 +1307,11 @@
     margin-top: var(--space-300);
   }
 
-  .thread {
-    display: contents;
-  }
-
-  .thread-line,
-  .thread-elbow {
-    border-color: var(--surface-container-line);
-    border-style: solid;
-    border-width: 0 0 0 var(--border-width-500);
-    inset-inline-start: calc(
-      var(--space-200) + var(--thread-level) * var(--space-400) + var(--space-400) / 2 -
-        var(--border-width-500) / 2
-    );
-    pointer-events: none;
-    position: absolute;
-    top: 0;
-  }
-
   .room-list
     > :where(:not(.closed-row))
     ~ .room-row-wrap:has(.room-category)
-    :is(.thread-line, .thread-elbow) {
+    :global(:is(.thread-line, .thread-elbow)) {
     top: calc(-1 * var(--space-300));
-  }
-
-  .thread-line {
-    bottom: 0;
-  }
-
-  .thread-elbow {
-    border-bottom-width: var(--border-width-500);
-    border-end-start-radius: var(--radii-300);
-    bottom: calc(50% - var(--border-width-500) / 2);
-    width: calc(var(--space-400) / 2 - var(--space-050));
   }
 
   .room-link-icon {
@@ -1401,6 +1361,38 @@
 
   .room-row.unread {
     font-weight: var(--font-weight-bold);
+  }
+
+  .thread-row .room-row {
+    font-size: var(--font-size-small);
+    min-height: 1.875rem;
+  }
+
+  .thread-row :global(svg) {
+    flex: none;
+  }
+
+  .thread-row .room-row > span:first-of-type {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .thread-row-status {
+    align-items: center;
+    display: inline-flex;
+    flex: none;
+    gap: var(--space-100);
+  }
+
+  .thread-unread-dot {
+    background: var(--primary-main);
+    border-radius: var(--radii-round);
+    flex: none;
+    height: var(--space-200);
+    width: var(--space-200);
   }
 
   .room-avatar {
@@ -1483,96 +1475,21 @@
     text-align: start;
   }
 
-  .category-caret.closed {
-    transform: rotate(-90deg);
+  .room-category:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring);
+    outline-offset: 2px;
   }
 
-  .category-caret :global(svg) {
-    height: 1rem;
-    width: 1rem;
-  }
-
-  .category-name,
-  .room-name,
-  .room-topic {
+  .category-name {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .category-name {
-    flex: 0 1 auto;
-  }
-
-  .room-text {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .room-status-emoji {
-    margin-inline-end: var(--space-050);
-  }
-
-  .room-topic {
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-400);
-    line-height: var(--line-height-small);
-    margin-top: calc(-1 * var(--space-050));
-    opacity: var(--opacity-p300);
-  }
-
-  .room-typing,
-  .room-mode {
-    align-items: center;
-    display: flex;
-    flex: none;
-  }
-
-  .room-typing {
-    background: var(--sec-container);
-    border: var(--border-width) solid var(--sec-container-line);
-    border-radius: var(--radius-pill);
-    height: 1.25rem;
-    padding: 0 var(--space-150);
-  }
-
-  .room-mode {
-    justify-content: center;
-    opacity: var(--opacity-p300);
-    width: var(--space-600);
-  }
-
-  .room-mode :global(svg) {
-    height: var(--size-x200);
-    width: var(--size-x200);
-  }
-
   :global(.room-avatar-icon.voice) {
     font-size: var(--font-size-body);
-  }
-
-  .voice-live {
-    align-items: center;
-    display: flex;
-    flex: none;
-    gap: var(--space-100);
-  }
-
-  .voice-faces {
-    display: flex;
-  }
-
-  .voice-faces :global(.avatar-root.voice-face) {
-    --avatar-size: 1.25rem;
-
-    border: var(--border-width) solid var(--bg-container);
-  }
-
-  .voice-faces :global(.avatar-root.voice-face:not(:first-child)) {
-    margin-inline-start: calc(-1 * var(--space-150));
   }
 
   .room-list.collapsed {
@@ -1593,17 +1510,17 @@
     width: var(--avatar-size-small);
   }
 
-  .room-list.collapsed .room-row:has(.voice-live) {
+  .room-list.collapsed .room-row:has(:global(.voice-live)) {
     flex-direction: column;
     gap: var(--space-050);
     padding-block: var(--space-100);
   }
 
-  .room-list.collapsed .voice-live {
+  .room-list.collapsed :global(.voice-live) {
     opacity: 1;
   }
 
-  .room-list.collapsed .voice-faces :global(.avatar-root.voice-face) {
+  .room-list.collapsed :global(.voice-faces .avatar-root.voice-face) {
     --avatar-size: 1rem;
   }
 
@@ -1621,19 +1538,10 @@
     width: var(--avatar-size-small);
   }
 
-  :is(.room-category, .rooms-heading):focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring);
-    outline-offset: 2px;
-  }
-
   @media (--app-layout) {
     .room-nav {
       flex: 0 0 var(--room-nav-width);
       width: var(--room-nav-width);
-    }
-
-    .rooms-heading {
-      height: var(--control-height-small);
     }
 
     .room-row {

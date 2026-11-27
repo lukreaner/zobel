@@ -1,4 +1,4 @@
-import type { MemberView, RoomListItemView } from '#src/generated/protocol';
+import type { MemberView, RoomListItemView, SpaceChildEdge } from '#src/generated/protocol';
 import { withCounts } from '#lib/rooms/summary-fixtures.js';
 
 export function roomView(overrides: Partial<RoomListItemView> = {}): RoomListItemView {
@@ -11,6 +11,7 @@ export function roomView(overrides: Partial<RoomListItemView> = {}): RoomListIte
     avatar_url: null,
     is_direct: false,
     direct_targets: [],
+    group_members: [],
     join_rule: 'invite',
     tags: [],
     state: 'joined',
@@ -24,6 +25,7 @@ export function roomView(overrides: Partial<RoomListItemView> = {}): RoomListIte
     supports_knock_restricted: false,
     space_children: [],
     bridge: null,
+    media_previews: null,
     unread: 0,
     notifying: 0,
     highlight: 0,
@@ -31,6 +33,18 @@ export function roomView(overrides: Partial<RoomListItemView> = {}): RoomListIte
     latest_event: null,
     ...overrides,
   });
+}
+
+export function spaceChild(overrides: Partial<SpaceChildEdge> = {}): SpaceChildEdge {
+  return {
+    room_id: '!room:example.org',
+    via: [],
+    order: null,
+    origin_server_ts: 0,
+    suggested: false,
+    private: false,
+    ...overrides,
+  };
 }
 
 export function memberView(overrides: Partial<MemberView> = {}): MemberView {

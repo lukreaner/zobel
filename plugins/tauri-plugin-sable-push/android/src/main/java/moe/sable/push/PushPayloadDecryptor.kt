@@ -13,6 +13,10 @@ internal sealed interface PushDecryptResult {
     data class Failure(val outcome: PushOutcome) : PushDecryptResult
 }
 
+internal data class SentReply(val text: String, val profile: SentProfile?)
+
+internal data class SentProfile(val id: String, val name: String, val avatar: String?)
+
 internal object PushPayloadDecryptor {
     private const val TAG = "PushPayloadDecryptor"
 
@@ -138,6 +142,7 @@ internal object PushPayloadDecryptor {
         roomId: String,
         sender: String,
         payloadName: String,
+        payloadAvatar: String,
         content: String,
     ): String?
 
@@ -148,13 +153,15 @@ internal object PushPayloadDecryptor {
         roomId: String,
         sender: String?,
         payloadName: String?,
+        payloadAvatar: String?,
         content: JSONObject?,
     ): JSONObject? {
         if (!available(context)) return null
         val json = try {
             nativePushMedia(
                 context.dataDir.absolutePath, userId, deviceId, roomId,
-                sender.orEmpty(), payloadName.orEmpty(), content?.toString().orEmpty(),
+                sender.orEmpty(), payloadName.orEmpty(), payloadAvatar.orEmpty(),
+                content?.toString().orEmpty(),
             )
         } catch (error: Throwable) {
             Log.i(TAG, "Push media unavailable: ${error.message}")
@@ -183,15 +190,23 @@ internal object PushPayloadDecryptor {
         privateReceipt: Boolean,
     ): Boolean
 
-    /** The body that was sent, without a profile shorthand, or null when nothing was sent. */
-    fun reply(context: Context, action: ConversationAction, deviceId: String, privateReceipt: Boolean): String? {
+    /** Null when nothing was sent. */
+    fun reply(context: Context, action: ConversationAction, deviceId: String, privateReceipt: Boolean): SentReply? {
         if (!available(context)) return null
         return runCatching {
             nativeReply(
                 context.dataDir.absolutePath, action.userId, deviceId, action.roomId,
                 action.text.orEmpty(), action.id, action.eventId, privateReceipt,
-            )
+            )?.let(::sentReply)
         }.onFailure { Log.i(TAG, "Reply not sent: ${it.message}") }.getOrNull()
+    }
+
+    internal fun sentReply(json: String): SentReply {
+        val value = JSONObject(json)
+        val profile = value.optJSONObject("profile")?.let {
+            SentProfile(it.getString("id"), it.getString("name"), if (it.isNull("avatar")) null else it.getString("avatar"))
+        }
+        return SentReply(value.getString("text"), profile)
     }
 
     fun markRead(context: Context, action: ConversationAction, deviceId: String, privateReceipt: Boolean): Boolean =

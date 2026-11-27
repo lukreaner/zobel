@@ -65,6 +65,7 @@ function image(eventId: string, filename: string): TimelineItemView {
     per_message_profile: null,
     bundled_link_previews: [],
     link_previews_removed: null,
+    shared_by: null,
     redacted_on_ban: null,
     mention: 'none',
     forwarded: null,
@@ -82,6 +83,7 @@ test.each([false, true])('thread quotes jump to messages (loaded=%s)', async (lo
     sender_mentioned: false,
     body: 'Quoted message',
     fallback: null,
+    emotes: [],
   };
   const startThread = vi.spyOn(RoomTimeline.prototype, 'startThread').mockImplementation(function (
     this: RoomTimeline
@@ -197,6 +199,27 @@ test('a linked reply missing from the thread opens on its context', async () => 
     expect(start).toHaveBeenCalledWith('!room:example.org', '$older');
   });
   expect(paginate).not.toHaveBeenCalled();
+});
+
+test('a link to the root keeps the thread timeline while the root is not loaded', async () => {
+  vi.spyOn(RoomTimeline.prototype, 'startThread').mockImplementation(function (this: RoomTimeline) {
+    this.items = [image('$reply', 'reply.png')];
+    this.hasSnapshot = true;
+    return Promise.resolve();
+  });
+  const start = vi.spyOn(RoomTimeline.prototype, 'start').mockResolvedValue();
+  vi.spyOn(RoomTimeline.prototype, 'stop').mockResolvedValue();
+  render(ThreadViewHarness, {
+    panel: {
+      roomId: '!room:example.org',
+      rootEventId: '$root',
+      focusEventId: '$root',
+      onClose: () => {},
+    },
+  });
+
+  expect(await screen.findByRole('button', { name: 'Open reply.png' })).toBeVisible();
+  expect(start).not.toHaveBeenCalled();
 });
 
 test('a linked reply already in the thread keeps the thread timeline', async () => {

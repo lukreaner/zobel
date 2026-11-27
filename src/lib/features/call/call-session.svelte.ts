@@ -135,6 +135,7 @@ export class CallSession {
   watchedScreenShareIds = $state.raw<string[]>([]);
   views = $state(0);
   deviceError = $state<CallDeviceError | null>(null);
+  deviceErrorName: string | null = null;
   listenOnly = $state(false);
   #deviceErrorTimer: ReturnType<typeof setTimeout> | undefined;
   choosingScreenAudio = $state(false);
@@ -293,11 +294,7 @@ export class CallSession {
           this.#client.rpc,
           roomId,
           serviceUrl,
-          hasNativeCalls()
-            ? 'legacy'
-            : preferences.callMode === 'auto'
-              ? null
-              : preferences.callMode,
+          preferences.callMode === 'auto' ? null : preferences.callMode,
           media.camera ? 'video' : 'audio'
         )
       );
@@ -330,14 +327,12 @@ export class CallSession {
                 : 'native';
             return { transport: injected, kind };
           }
-          if (grant.mode === 'legacy') {
-            const native = await createNativeTransport(
-              String(grant.session),
-              grant.identity,
-              this.#deps.roomName?.(roomId) ?? roomId
-            );
-            if (native) return { transport: native, kind: 'native' };
-          }
+          const native = await createNativeTransport(
+            String(grant.session),
+            grant.identity,
+            this.#deps.roomName?.(roomId) ?? roomId
+          );
+          if (native) return { transport: native, kind: 'native' };
           if (grant.backends.length) {
             const multi = await import('./multi-sfu-transport');
             return {
@@ -371,7 +366,6 @@ export class CallSession {
       }
       recordCallDebug({
         requested: preferences.callMode,
-        nativeForced: hasNativeCalls(),
         mode: grant.mode,
         reason: grant.mode_reason,
         stickyAvailable: grant.sticky_available,
@@ -538,6 +532,7 @@ export class CallSession {
     clearTimeout(this.#deviceErrorTimer);
     this.#deviceErrorTimer = undefined;
     this.deviceError = null;
+    this.deviceErrorName = null;
   }
 
   async #device(kind: CallDeviceError, action: () => Promise<void> | undefined): Promise<boolean> {
@@ -559,6 +554,7 @@ export class CallSession {
         return false;
       this.clearDeviceError();
       this.deviceError = error instanceof ScreenAudioError ? 'screenAudio' : kind;
+      this.deviceErrorName = error instanceof Error ? error.name : null;
       this.#deviceErrorTimer = setTimeout(() => {
         this.clearDeviceError();
       }, DEVICE_ERROR_TIMEOUT_MS);
@@ -725,6 +721,8 @@ export class CallSession {
   }
 
   #fail(failure: CallFailure): void {
+    // A call that was up and dropped sounds like leaving it; one that never connected is silent.
+    if (this.connectedAt !== null) this.#cue('call_leave');
     this.failure = failure;
     this.lifecycle = 'failed';
     this.connectedAt = null;

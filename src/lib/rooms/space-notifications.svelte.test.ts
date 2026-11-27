@@ -33,6 +33,7 @@ function room(
     avatar_url: null,
     is_direct: false,
     direct_targets: [],
+    group_members: [],
     join_rule: 'invite',
     tags: [],
     state: 'joined',
@@ -46,6 +47,7 @@ function room(
     supports_knock_restricted: true,
     space_children: [],
     bridge: null,
+    media_previews: null,
     unread: 0,
     notifying: 0,
     highlight: 0,
@@ -65,6 +67,7 @@ function space(room_id: string, children: string[]): RoomListItemView {
       order: null,
       origin_server_ts: 0,
       suggested: false,
+      private: false,
     })),
   });
 }

@@ -1,3 +1,6 @@
+import { gifFromUploadedMxc, type GifResult } from '#lib/gif/providers.js';
+import { appMime } from '#lib/mime.js';
+import { topicToHtml } from '#lib/model/model.js';
 import { parseMatrixLink } from '#lib/rooms/matrix-link.js';
 import type { UrlPreviewView, VideoPlaybackView } from '#src/generated/protocol';
 
@@ -20,6 +23,58 @@ export function isGifHostUrl(href: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function isGifPreview(url: string, preview: UrlPreviewView | null): boolean {
+  return preview?.video?.gif === true || preview?.image_mime === 'image/gif' || isGifHostUrl(url);
+}
+
+type PreviewGif = {
+  media: { source: string; filename: string; mime: string | null };
+  favorite: GifResult | undefined;
+};
+
+function lastPathSegment(url: string): string {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean).at(-1) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function previewFilename(url: string, mime: string | null): string {
+  const stem = lastPathSegment(url).replace(/\.[^.]+$/, '') || 'gif';
+  return `${stem}.${(mime !== null && appMime.getExtension(mime)) || 'gif'}`;
+}
+
+export function previewGif(previews: readonly UrlPreviewView[]): PreviewGif | null {
+  for (const preview of previews) {
+    if (!isGifPreview(preview.url, preview)) continue;
+    if (preview.video) {
+      const { source, mime } = preview.video;
+      return {
+        media: { source, filename: previewFilename(preview.url, mime), mime },
+        favorite: undefined,
+      };
+    }
+    if (preview.image) {
+      const mime = preview.image_mime ?? imageMimeFromUrl(preview.url) ?? 'image/gif';
+      const filename = previewFilename(preview.url, mime);
+      return {
+        media: { source: preview.image, filename, mime },
+        favorite: gifFromUploadedMxc(
+          preview.image,
+          filename,
+          preview.image_width,
+          preview.image_height,
+          null,
+          mime,
+          true
+        ),
+      };
+    }
+  }
+  return null;
 }
 
 export function hasPreviewData(preview: UrlPreviewView): boolean {
@@ -90,14 +145,56 @@ function bracketed(anchor: Element): boolean {
   );
 }
 
+const HIDDEN_LINK_CONTEXT = 'pre, code, span[data-mx-spoiler]';
+
+function previewableHref(anchor: Element, body: string): string | null {
+  const href = anchor.getAttribute('href') ?? '';
+  return !anchor.closest(HIDDEN_LINK_CONTEXT) &&
+    !bracketed(anchor) &&
+    isPreviewable(href) &&
+    !body.includes(`<${href}>`)
+    ? href
+    : null;
+}
+
 export function previewableLinks(html: string, body = ''): string[] {
   if (!html.includes('<a')) return [];
   const links = new Set<string>();
   const document = new DOMParser().parseFromString(html, 'text/html');
   for (const anchor of document.querySelectorAll('a[href]')) {
-    if (anchor.closest('pre, code, span[data-mx-spoiler]') || bracketed(anchor)) continue;
-    const href = anchor.getAttribute('href') ?? '';
-    if (isPreviewable(href) && !body.includes(`<${href}>`)) links.add(href);
+    const href = previewableHref(anchor, body);
+    if (href !== null) links.add(href);
+  }
+  return [...links];
+}
+
+export function outgoingPreviewableLinks(html: string | null, body: string): string[] {
+  const links = new Set<string>();
+  const addBareLinks = (text: string) => {
+    if (!/https?:\/\//iu.test(text)) return;
+    for (const href of previewableLinks(topicToHtml(text), body)) {
+      if (text.includes(href)) links.add(href);
+    }
+  };
+  if (html === null) {
+    addBareLinks(body);
+  } else {
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+    );
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (node instanceof Element && node.matches('a[href]')) {
+        const href = previewableHref(node, body);
+        if (href !== null) links.add(href);
+      } else if (
+        node.nodeType === Node.TEXT_NODE &&
+        !node.parentElement?.closest(`a, ${HIDDEN_LINK_CONTEXT}, mx-reply, script, style, textarea`)
+      ) {
+        addBareLinks(node.textContent ?? '');
+      }
+    }
   }
   return [...links];
 }

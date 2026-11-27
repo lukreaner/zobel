@@ -13,7 +13,14 @@
     preview?: string | null;
   };
 
-  let { open = $bindable(false), preview = null, roomId, ...actions }: Props = $props();
+  let {
+    open = $bindable(false),
+    preview = null,
+    roomId,
+    linkDestination,
+    ...actions
+  }: Props = $props();
+  let rows = $derived(messageMenuRows(actions));
 
   function run(action: () => void): void {
     open = false;
@@ -24,6 +31,11 @@
     open = false;
     actions.onReact?.(emoji);
   }
+
+  function addReaction(): void {
+    open = false;
+    actions.onAddReaction?.();
+  }
 </script>
 
 <BottomSheet
@@ -33,14 +45,28 @@
 >
   {#if preview}
     <p class="sheet-source">{preview}</p>
+  {/if}
+  {#if linkDestination}
+    <p class="sheet-source sheet-link-destination">
+      {i18n.t('timeline.linkDestination')}: <bdi dir="ltr">{linkDestination}</bdi>
+    </p>
+  {/if}
+  {#if preview || linkDestination}
     <div class="sheet-line"></div>
   {/if}
   <IconContext values={{ 'aria-hidden': 'true' }}>
     {#if actions.onReact}
-      <MessageQuickReactions count={8} onReact={react} {roomId} roomy />
+      <MessageQuickReactions
+        count={8}
+        onReact={react}
+        onAdd={actions.onAddReaction ? addReaction : undefined}
+        divider={rows.length > 0}
+        {roomId}
+        roomy
+      />
     {/if}
     <div class="sheet-list">
-      {#each messageMenuRows(actions) as row (row.key)}
+      {#each rows as row (row.key)}
         {@const RowIcon = row.icon}
         {#if row.separated}<div class="sheet-line"></div>{/if}
         <button
@@ -61,6 +87,7 @@
 <style>
   .sheet-source {
     color: var(--surface-var-on-container);
+    flex-shrink: 0;
     font-size: var(--font-size-small);
     margin: 0 0 var(--space-200);
     overflow: hidden;
@@ -72,6 +99,12 @@
   .sheet-line {
     background: var(--surface-container-line);
     block-size: var(--border-width);
+    flex-shrink: 0;
+  }
+
+  .sheet-link-destination {
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .sheet-list {

@@ -15,8 +15,8 @@
   import FormField from '#lib/ui/primitives/FormField.svelte';
   import AuthField from '../shared/AuthField.svelte';
   import AuthInfoBox from '../shared/AuthInfoBox.svelte';
-  import AuthSecondaryAction from '../shared/AuthSecondaryAction.svelte';
   import AuthStatusSlot from '../shared/AuthStatusSlot.svelte';
+  import '#lib/ui/primitives/file-button.css';
 
   interface Props {
     userId: string;
@@ -35,7 +35,6 @@
     onBanner: (file: File | null) => void;
     onAvatar: (file: File | null) => void;
     onContinue: () => void;
-    onSkip: () => void;
   }
 
   let {
@@ -55,7 +54,6 @@
     onBanner,
     onAvatar,
     onContinue,
-    onSkip,
   }: Props = $props();
 
   let moreOpen = $state(false);
@@ -80,7 +78,7 @@
         class="avatar-preview"
         id={userId}
         src={avatarPreview}
-        alt=""
+        decorative
         name={displayName || userId}
         size="large"
       />
@@ -228,8 +226,6 @@
   </Button>
 </form>
 
-<AuthSecondaryAction label={i18n.t('auth.skipForNow')} onclick={onSkip} disabled={isSaving} />
-
 <style>
   .profile-card {
     min-width: 0;
@@ -286,26 +282,10 @@
     gap: var(--space-200);
   }
 
-  .file-button {
-    cursor: pointer;
-    position: relative;
-  }
-
-  .file-button input {
-    height: 1px;
-    opacity: 0;
-    position: absolute;
-    width: 1px;
-  }
-
   @media (pointer: coarse) {
     .file-button {
       min-height: 2.75rem;
     }
-  }
-
-  .file-button:focus-within {
-    box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring);
   }
 
   :global(.avatar-root.avatar-preview) {

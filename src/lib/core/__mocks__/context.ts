@@ -1,7 +1,13 @@
 import { vi, type Mock } from 'vitest';
 import { defaultE2eePolicy } from '#lib/deployment/e2ee-policy.js';
 import { MemberPreviews } from '#lib/rooms/member-previews.svelte.js';
-import { createRpc, type OAuthMetadataView, type Rpc } from '#src/generated/protocol';
+import {
+  createRpc,
+  type CoreEvent,
+  type OAuthMetadataView,
+  type RecentUse,
+  type Rpc,
+} from '#src/generated/protocol';
 
 const pending = () => new Promise<never>(() => {});
 
@@ -47,19 +53,23 @@ export function createCoreStub<T extends Record<string, unknown> & { rpc?: RpcOv
       Promise.reject(new Error('profile unavailable'))
     ),
     e2eePolicy: vi.fn(() => Promise.resolve(defaultE2eePolicy)),
-    subscribeEvents: vi.fn(() => () => {}),
+    subscribeEvents: vi.fn<(listener: (event: CoreEvent) => void) => () => void>(() => () => {}),
     onProfileChanged: vi.fn(() => () => {}),
     oauthMetadata: null as OAuthMetadataView | null,
     rpc: mockRpc(
       {
+        account: { threadSidebar: vi.fn(() => Promise.resolve({ pins: [], dismissed: [] })) },
         members: {
           powerLevelTags: vi.fn(() => Promise.resolve({})),
           member: vi.fn(() => Promise.resolve(null)),
         },
         messages: {
+          eventReactions: vi.fn(() => Promise.resolve([])),
           reactionShortcodes: vi.fn(() => Promise.resolve([])),
           frequentReactions: vi.fn(() => Promise.resolve([])),
           rememberEmoji: vi.fn(() => Promise.resolve(null)),
+          recentStickers: vi.fn(() => Promise.resolve<RecentUse[]>([])),
+          rememberSticker: vi.fn(() => Promise.resolve(null)),
         },
         room_state: {
           event: vi.fn(() => Promise.resolve(null)),
@@ -76,7 +86,10 @@ export function createCoreStub<T extends Record<string, unknown> & { rpc?: RpcOv
           setTag: vi.fn(() => Promise.resolve(null)),
         },
         spaces: { unjoinedSpaceParents: vi.fn(() => Promise.resolve([])) },
-        timeline: { markRead: vi.fn(() => Promise.resolve(null)) },
+        timeline: {
+          markRead: vi.fn(() => Promise.resolve(null)),
+          threadReplies: vi.fn(() => Promise.resolve([])),
+        },
       },
       rpcOverrides
     ),

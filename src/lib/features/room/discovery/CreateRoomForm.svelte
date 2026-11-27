@@ -8,6 +8,8 @@
   import UsersThreeIcon from 'phosphor-svelte/lib/UsersThreeIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
 
+  import { onDestroy } from 'svelte';
+
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { useCoreClient } from '#lib/core/context.js';
@@ -26,7 +28,11 @@
   import Switch from '#lib/ui/primitives/Switch.svelte';
   import TextArea from '#lib/ui/primitives/TextArea.svelte';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
+  import { isComposingKey } from '#lib/ui/shortcuts/binding.js';
 
+  import { UserDirectoryLookup } from '../members/user-directory-lookup.svelte.js';
+  import UserSuggestionList from '../members/UserSuggestionList.svelte';
+  import { additionalCreatorsSupported } from '../settings/room-upgrade';
   import { validateRoomAliasLocalpart, type RoomAliasLocalpartError } from './room-alias-localpart';
 
   type PrivateJoinRule = Exclude<CreateJoinRuleView, 'public'>;
@@ -59,6 +65,10 @@
   let roomVersionChoice = $state('');
   let federate = $state(true);
   let roomVersions = $state.raw<RoomVersionsView | null>(null);
+  let creatorDraft = $state('');
+  let creators = $state.raw<string[]>([]);
+  let creatorError = $state<string | null>(null);
+  const directory = new UserDirectoryLookup(core);
   let inviteDraft = $state('');
   let invites = $state.raw<string[]>([]);
   let inviteInvalid = $state(false);
@@ -88,7 +98,8 @@
     access === 'public' && aliasTrimmed !== '' ? validateRoomAliasLocalpart(aliasTrimmed) : null
   );
   let aliasToSend = $derived(access === 'public' && aliasTrimmed !== '' ? aliasTrimmed : null);
-  let roomVersionToSend = $derived(roomVersionChoice === '' ? null : roomVersionChoice);
+  let effectiveRoomVersion = $derived(roomVersionChoice || roomVersions?.default || '');
+  let allowCreators = $derived(additionalCreatorsSupported(effectiveRoomVersion));
   let versionItems = $derived([
     {
       value: '',
@@ -101,6 +112,12 @@
       label: entry.stable ? entry.id : i18n.t('room.createVersionUnstable', { version: entry.id }),
     })),
   ]);
+  let suggestionList = $state<UserSuggestionList>();
+  let suggestions = $derived(
+    directory.results.filter(
+      (entry) => entry.user_id !== inviteDraft.trim() && !invites.includes(entry.user_id)
+    )
+  );
   let canSubmit = $derived(name.trim() !== '' && aliasError === null && !submitting);
 
   $effect(() => {
@@ -116,6 +133,10 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  onDestroy(() => {
+    directory.cancel();
   });
 
   function aliasErrorMessageKey(error: RoomAliasLocalpartError): string {
@@ -139,8 +160,12 @@
       : i18n.t('room.createJoinRuleRequiresSpace');
   }
 
-  function addInvite(): void {
-    const candidate = inviteDraft.trim();
+  function setInviteDraft(next: string): void {
+    inviteDraft = next;
+    directory.search(next.trim());
+  }
+
+  function addInvite(candidate = inviteDraft.trim()): void {
     if (candidate === '') return;
     if (!isUserId(candidate)) {
       inviteInvalid = true;
@@ -148,7 +173,7 @@
     }
     inviteInvalid = false;
     if (!invites.includes(candidate)) invites = [...invites, candidate];
-    inviteDraft = '';
+    setInviteDraft('');
   }
 
   function removeInvite(userId: string): void {
@@ -156,10 +181,28 @@
   }
 
   function onInviteKeydown(event: KeyboardEvent): void {
+    if (isComposingKey(event) || suggestionList?.handleKey(event)) return;
     if (event.key !== 'Enter') return;
     // Enter adds the invite; the form must not submit.
     event.preventDefault();
     addInvite();
+  }
+
+  function addCreator(): void {
+    const userId = creatorDraft.trim();
+    if (!userId) return;
+    document.getElementById('create-room-creator')?.focus();
+    if (!isUserId(userId)) {
+      creatorError = 'common.userIdFormatHint';
+      return;
+    }
+    if (userId === core.session?.user_id) {
+      creatorError = 'room.createCreatorSelf';
+      return;
+    }
+    if (!creators.includes(userId)) creators = [...creators, userId];
+    creatorError = null;
+    creatorDraft = '';
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -168,6 +211,10 @@
 
     submitting = true;
     failed = false;
+    const additionalCreators = allowCreators ? creators : [];
+    const roomVersion = additionalCreators.length
+      ? effectiveRoomVersion
+      : roomVersionChoice || null;
     try {
       const roomId = await createRoom(core.rpc, {
         name: name.trim(),
@@ -177,9 +224,10 @@
         encrypted: encryptable && encrypted && !(await core.e2eePolicy()).forceDisabled,
         // A `$state` array is a Proxy, which postMessage cannot clone.
         invite: [...invites],
+        additional_creators: additionalCreators,
         parent_space: parentSpace === '' ? null : parentSpace,
         alias: aliasToSend,
-        room_version: roomVersionToSend,
+        room_version: roomVersion,
         join_rule: joinRuleToSend,
         federate,
       });
@@ -416,11 +464,67 @@
           id="create-room-version"
           value={roomVersionChoice}
           items={versionItems}
+          disabled={submitting}
           onValueChange={(value: string) => {
             roomVersionChoice = value;
           }}
         />
       </FormField>
+
+      {#if allowCreators}
+        <FormField
+          fieldId="create-room-creator"
+          label={i18n.t('room.upgradeCreators')}
+          error={creatorError && i18n.t(creatorError)}
+        >
+          <p id="create-room-creator-hint" class="hint">{i18n.t('room.createCreatorsHint')}</p>
+          <div class="invite-row">
+            <TextInput
+              id="create-room-creator"
+              bind:value={creatorDraft}
+              autocomplete="off"
+              placeholder={i18n.t('room.createInvitePlaceholder')}
+              disabled={submitting}
+              aria-invalid={creatorError !== null}
+              aria-describedby={creatorError
+                ? 'create-room-creator-hint create-room-creator-error'
+                : 'create-room-creator-hint'}
+              oninput={() => {
+                creatorError = null;
+              }}
+              onkeydown={(event: KeyboardEvent) => {
+                if (event.key !== 'Enter' || isComposingKey(event)) return;
+                event.preventDefault();
+                addCreator();
+              }}
+            />
+            <Button disabled={submitting || !creatorDraft.trim()} onclick={addCreator}>
+              {i18n.t('room.createCreatorAdd')}
+            </Button>
+          </div>
+          {#if creators.length > 0}
+            <ul class="invites">
+              {#each creators as creator (creator)}
+                <li>
+                  <span>{creator}</span>
+                  <IconButton
+                    variant="ghost"
+                    size="small"
+                    label={i18n.t('room.createCreatorRemove', { user: creator })}
+                    disabled={submitting}
+                    onclick={() => {
+                      document.getElementById('create-room-creator')?.focus();
+                      creators = creators.filter((entry) => entry !== creator);
+                    }}
+                  >
+                    <XIcon />
+                  </IconButton>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </FormField>
+      {/if}
     </div>
   </details>
 
@@ -428,14 +532,33 @@
     <div class="invite-row">
       <TextInput
         id="create-room-invite"
-        bind:value={inviteDraft}
+        role="combobox"
+        aria-expanded={suggestions.length > 0}
+        aria-controls={suggestions.length > 0 ? 'create-room-invite-suggestions' : undefined}
+        aria-activedescendant={suggestionList?.activeOptionId()}
+        aria-autocomplete="list"
+        bind:value={() => inviteDraft, setInviteDraft}
         autocomplete="off"
         placeholder={i18n.t('room.createInvitePlaceholder')}
         aria-invalid={inviteInvalid}
         onkeydown={onInviteKeydown}
       />
-      <Button onclick={addInvite}>{i18n.t('common.add')}</Button>
+      <Button
+        onclick={() => {
+          addInvite();
+        }}
+      >
+        {i18n.t('common.add')}
+      </Button>
     </div>
+    {#if suggestions.length > 0}
+      <UserSuggestionList
+        bind:this={suggestionList}
+        id="create-room-invite-suggestions"
+        entries={suggestions}
+        onSelect={addInvite}
+      />
+    {/if}
     {#if inviteInvalid}
       <p class="error">{i18n.t('common.userIdFormatHint')}</p>
     {/if}

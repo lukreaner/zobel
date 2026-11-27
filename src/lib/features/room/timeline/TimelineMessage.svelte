@@ -1,16 +1,14 @@
 <script lang="ts">
   import type { ReplyView } from '#src/generated/protocol';
+  import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
 
-  import '../members/avatar-button.css';
   import './timeline-highlight.css';
   import { mediaProgress } from '#lib/ui/media-progress.svelte.js';
   import { senderDisplayColors } from '../members/members.js';
-  import { previewableLinks } from '../media/link-preview.js';
   import LinkEmbed from '../media/embeds/LinkEmbed.svelte';
   import { isMediaCaptionContent } from '../messages/media-caption.js';
   import { i18n } from '#lib/i18n.js';
   import { preferences } from '#lib/settings/preferences.svelte.js';
-  import Avatar from '#lib/ui/primitives/Avatar.svelte';
   import Skeleton from '#lib/ui/primitives/Skeleton.svelte';
   import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
   import { nameColorOnDark, nameColorOnLight } from '#lib/ui/primitives/readable-color.js';
@@ -32,7 +30,9 @@
   import { formatFullTimestamp, formatMessageTimestamp, formatTime } from '#lib/ui/date-time.js';
   import Spinner from '#lib/ui/primitives/Spinner.svelte';
 
+  import { MessageLinkPreviews } from './message-link-previews.svelte';
   import { MessageSender } from './message-sender.svelte';
+  import { MessageTransfer } from './message-transfer.svelte';
   import { TimelineRow, type TimelineItemProps } from './timeline-row.svelte';
   import TimelineReplyPreview from './TimelineReplyPreview.svelte';
   import TimelineSendFailure from './TimelineSendFailure.svelte';
@@ -41,6 +41,8 @@
   import TimelineTransfer from './TimelineTransfer.svelte';
   import UndecryptableNotice from './UndecryptableNotice.svelte';
   import MessageShieldNotice from './MessageCryptoStatus.svelte';
+  import MessageSharedBy from './MessageSharedBy.svelte';
+  import TimelineSenderAvatar from './TimelineSenderAvatar.svelte';
 
   let {
     item,
@@ -95,6 +97,7 @@
   const named = $derived(layout === 'compact' || !collapsed);
   const ownBubble = $derived(layout === 'bubble' && item.is_own && alignOwn);
 
+  const linkPreviews = new MessageLinkPreviews(() => item);
   const row = new TimelineRow(() => ({
     item,
     roomId,
@@ -107,7 +110,8 @@
     editing,
     overrideCosmetics,
     replySender,
-    hasLinkPreviews: bundledPreviews.length > 0 || previewUrls.length > 0,
+    hasLinkPreviews: linkPreviews.any,
+    linkPreviews: linkPreviews.shown,
     onToggleReaction,
     onMarkUnread,
     onReply,
@@ -135,46 +139,20 @@
     item.in_reply_to ? (events?.get(item.in_reply_to.event_id) ?? null) : null
   );
   let replySender = $derived(item.in_reply_to?.sender ?? replyTarget?.sender ?? null);
+  let shieldShown = $derived(
+    item.shield !== null && (item.shield.critical || !preferences.hideMessageShields)
+  );
   let emote = $derived(item.content.kind === 'message' && item.content.msgtype === 'emote');
   let notice = $derived(item.content.kind === 'message' && item.content.msgtype === 'notice');
   let jumbo = $derived(item.content.kind === 'message' ? (item.content.jumbo ?? null) : null);
-  let upload = $derived(
-    item.send_state?.status === 'sending' ? (item.send_state.progress ?? null) : null
-  );
-  let uploading = $derived(
-    row.pending &&
-      (item.content.kind === 'image' ||
-        item.content.kind === 'video' ||
-        item.content.kind === 'audio' ||
-        item.content.kind === 'file' ||
-        item.content.kind === 'gallery')
-  );
-  let galleryCount = $derived(item.content.kind === 'gallery' ? item.content.items.length : 0);
   const saving = mediaProgress(row.core, () => row.actionExecutor.savingSource);
-  let transfer = $derived.by(() => {
-    const onCancel = item.transaction_id ? cancelSend : undefined;
-    if (upload !== null) {
-      const part = upload.total > 0 ? Math.min(1, upload.current / upload.total) : 0;
-      const gallery = galleryCount > 1;
-      return {
-        label: i18n.t('timeline.uploading'),
-        max: 1,
-        value: gallery ? Math.min(1, (upload.index + part) / galleryCount) : part,
-        count: gallery
-          ? i18n.t('timeline.uploadingItem', {
-              current: Math.min(upload.index + 1, galleryCount),
-              count: galleryCount,
-            })
-          : null,
-        onCancel,
-      };
-    }
-    if (uploading) return { label: i18n.t('timeline.uploading'), onCancel };
-    if (saving.percent !== null)
-      return { label: i18n.t('timeline.downloading'), max: 100, value: saving.percent };
-    if (row.actionExecutor.savingSlow) return { label: i18n.t('timeline.downloading') };
-    return null;
-  });
+  const transfer = new MessageTransfer(() => ({
+    item,
+    pending: row.pending,
+    savingPercent: saving.percent,
+    savingSlow: row.actionExecutor.savingSlow,
+    onCancel: cancelSend,
+  }));
 
   let editable = $derived(
     !item.forwarded &&
@@ -197,28 +175,14 @@
       receiptReaders.length > 0
   );
   let nonTextContent = $derived(item.content.kind !== 'message');
-  let previewsRemoved = $derived(item.link_previews_removed === true);
-  let bundledPreviews = $derived(previewsRemoved ? [] : item.bundled_link_previews);
-  let previewUrls = $derived.by(() => {
-    if (previewsRemoved || bundledPreviews.length > 0) return [];
-    const content = item.content;
-    if (content.kind === 'message' || content.kind === 'gallery')
-      return previewableLinks(content.html, content.body);
-    if (isMediaCaptionContent(content) && content.caption !== null)
-      return previewableLinks(content.html ?? '', content.caption).filter(
-        (url) => url !== content.external_url
-      );
-    return [];
-  });
   let receiptWidth = $state(0);
   let receiptsInline = $derived(
     (!nonTextContent || item.content.kind === 'redacted') &&
       item.reactions.length === 0 &&
       !threadSummary &&
       !item.thread_root &&
-      bundledPreviews.length === 0 &&
-      previewUrls.length === 0 &&
-      upload === null &&
+      !linkPreviews.any &&
+      transfer.upload === null &&
       row.stalled === null
   );
 
@@ -265,8 +229,8 @@
     actionable={row.actionable}
     onReact={row.actions.onReact}
     {onToggleReaction}
-    onViewReactions={(index: number) => {
-      row.dialogs.open(item, { kind: 'reactions', active: index });
+    onViewReactions={(key: string) => {
+      row.dialogs.open(item, { kind: 'reactions', active: key });
     }}
   />
 {/snippet}
@@ -291,28 +255,14 @@
   />
 {/snippet}
 
-{#snippet senderAvatarButton(size: 'tiny' | 'small')}
-  {#snippet avatar()}
-    <Avatar
-      class="message-avatar"
-      src={sender.avatar}
-      {size}
-      id={sender.tint ? null : item.sender}
-      name={sender.name}
-    />
-  {/snippet}
-  {#if item.sender && onSenderProfile}
-    <button
-      class="sender-avatar-button"
-      type="button"
-      aria-label={i18n.t('timeline.senderProfile', { name: sender.name })}
-      onclick={openSenderProfile}
-    >
-      {@render avatar()}
-    </button>
-  {:else}
-    {@render avatar()}
-  {/if}
+{#snippet senderAvatar(size: 'tiny' | 'small')}
+  <TimelineSenderAvatar
+    src={sender.avatar}
+    id={sender.tint ? null : item.sender}
+    name={sender.name}
+    {size}
+    onOpenProfile={item.sender && onSenderProfile ? sender.openProfile : undefined}
+  />
 {/snippet}
 
 {#snippet actions()}
@@ -379,7 +329,10 @@
       `layout-${layout}`,
       {
         collapsed,
+        editing,
         highlighted,
+        selecting: row.selecting,
+        'multi-selected': row.multiSelected,
         pressed: row.press.pressing,
         'has-connected-reply':
           item.in_reply_to !== null && preferences.replyPreviewStyle === 'connected',
@@ -392,6 +345,7 @@
       },
     ]}
     data-selected={selected ? 'true' : undefined}
+    data-multi-selected={row.multiSelected ? 'true' : undefined}
     aria-labelledby={named ? `${labelId}-head` : undefined}
     aria-describedby={`${labelId}-body`}
     style:--pmp-on-light={nameColorOnLight(sender.tint?.color_on_light) ?? undefined}
@@ -403,7 +357,7 @@
     style:--timeline-emote-align={defaultEmoteSize ? 'bottom' : undefined}
     style:transform={row.swipe.offset === 0
       ? undefined
-      : `translateX(${String(-row.swipe.offset)}px)`}
+      : `translateX(calc(${String(-row.swipe.offset)}px * var(--inline-sign)))`}
     style:transition={row.swipe.dragging ? 'none' : undefined}
     onpointerdown={row.pointerDown}
     onpointermove={row.press.move}
@@ -416,6 +370,22 @@
     oncontextmenu={row.openContextMenu}
     {@attach row.attach}
   >
+    {#if row.selecting && row.actionable}
+      <button
+        type="button"
+        class={['select-toggle', { checked: row.multiSelected }]}
+        role="checkbox"
+        aria-checked={row.multiSelected}
+        aria-label={i18n.t(
+          row.multiSelected ? 'timeline.deselectMessageFrom' : 'timeline.selectMessageFrom',
+          { sender: sender.name }
+        )}
+      >
+        <span class="select-box" aria-hidden="true">
+          {#if row.multiSelected}<CheckIcon weight="bold" />{/if}
+        </span>
+      </button>
+    {/if}
     {#if row.swipe.offset > 0}
       <TimelineSwipeAction
         offset={row.swipe.offset}
@@ -426,7 +396,7 @@
     {/if}
     {#if layout !== 'compact' && !collapsed}
       {#if !ownBubble}
-        {@render senderAvatarButton('small')}
+        {@render senderAvatar('small')}
       {/if}
       {@render actions()}
     {:else if layout !== 'compact' && row.pending}
@@ -445,7 +415,7 @@
           {@render messageTime(formatTime)}
           <div class="compact-user">
             {#if avatarsInHeaders}
-              {@render senderAvatarButton('tiny')}
+              {@render senderAvatar('tiny')}
             {/if}
             <SenderName
               displayName={sender.name}
@@ -616,10 +586,10 @@
           </div>
         {/if}
         {#if !editor}
-          {#each bundledPreviews as preview (preview.url)}
+          {#each linkPreviews.bundled as preview (preview.url)}
             <LinkEmbed url={preview.url} bundled={preview} {encrypted} />
           {/each}
-          {#each previewUrls as url (url)}
+          {#each linkPreviews.urls as url (url)}
             <LinkEmbed {url} {encrypted} />
           {/each}
         {/if}
@@ -627,7 +597,13 @@
           {@const target = threadTarget}
           <TimelineThreadSummary
             summary={threadSummary}
+            {roomId}
+            rootId={target}
+            rootSender={item.sender}
+            {members}
+            {currentUserId}
             persona={threadPersona}
+            {preview}
             onOpen={() => {
               onOpenThread(target);
             }}
@@ -641,8 +617,8 @@
         {:else if item.reactions.length > 0}
           {@render reactions()}
         {/if}
-        {#if transfer}
-          <TimelineTransfer {...transfer} />
+        {#if transfer.props}
+          <TimelineTransfer {...transfer.props} />
         {/if}
         {#if row.stalled}
           <TimelineSendFailure
@@ -659,8 +635,15 @@
           <span class="receipt-tail" aria-hidden="true"></span>
         {/if}
       </div>
-      {#if item.shield && (item.shield.critical || !preferences.hideMessageShields)}
-        <MessageShieldNotice shield={item.shield} />
+      {#if shieldShown || item.shared_by}
+        <span class="crypto-indicators">
+          {#if item.shield && shieldShown}
+            <MessageShieldNotice shield={item.shield} />
+          {/if}
+          {#if item.shared_by}
+            <MessageSharedBy sharedBy={item.shared_by} />
+          {/if}
+        </span>
       {/if}
       {#if trailingReceiptBadge && layout !== 'bubble'}
         {@render receiptSlot()}
@@ -727,11 +710,14 @@
   }
 
   .message {
+    --row-inset-start: var(--page-gutter);
+
     display: flex;
     gap: var(--timeline-row-gap);
     margin-inline: calc(-1 * var(--page-gutter));
     overflow-wrap: anywhere;
-    padding: var(--timeline-row-padding) var(--page-gutter);
+    padding: var(--timeline-row-padding) var(--page-gutter) var(--timeline-row-padding)
+      calc(var(--row-inset-start) + var(--selection-gutter));
     position: relative;
   }
 
@@ -760,11 +746,12 @@
   .message.mention-silent,
   .message.mention-loud {
     --mention-gutter: calc(var(--space-200) + var(--border-width) * 4);
+    --row-inset-start: var(--space-200);
 
     border-inline-start: calc(var(--border-width) * 4) solid;
     border-radius: 0 var(--radius) var(--radius) 0;
     margin-inline: calc(-1 * var(--mention-gutter)) calc(-1 * var(--space-200));
-    padding-inline: var(--space-200);
+    padding-inline: calc(var(--row-inset-start) + var(--selection-gutter)) var(--space-200);
   }
 
   .message.mention-silent {
@@ -790,7 +777,11 @@
     outline-offset: calc(-1 * var(--focus-ring-offset));
   }
 
-  .message:has(:focus-visible):not([data-selected='true'], :has(.reply-preview:focus-visible)) {
+  .message:has(:focus-visible):not(
+      [data-selected='true'],
+      [data-multi-selected='true'],
+      :has(.reply-preview:focus-visible)
+    ) {
     background: var(--bg-container-hover);
     border-radius: var(--radius);
     color: var(--bg-on-container);
@@ -798,22 +789,16 @@
 
   .message.collapsed {
     padding-inline-start: calc(
-      var(--page-gutter) + var(--avatar-size-small) + var(--timeline-row-gap)
+      var(--row-inset-start) + var(--selection-gutter) + var(--avatar-size-small) +
+        var(--timeline-row-gap)
     );
     padding-top: 0;
-  }
-
-  .message.collapsed.mention-silent,
-  .message.collapsed.mention-loud {
-    padding-inline-start: calc(
-      var(--avatar-size-small) + var(--timeline-row-gap) + var(--space-200)
-    );
   }
 
   .collapsed-pending {
     display: flex;
     inset-block-start: 0;
-    inset-inline-start: var(--page-gutter);
+    inset-inline-start: calc(var(--row-inset-start) + var(--selection-gutter));
     justify-content: center;
     position: absolute;
     width: var(--avatar-size-small);
@@ -825,17 +810,12 @@
     font-size: var(--font-size-x-small);
     font-variant-numeric: tabular-nums;
     height: calc(var(--font-size-editor) * var(--line-height-body));
-    inset-inline-start: 0;
+    inset-inline-start: var(--selection-gutter);
     justify-content: flex-end;
     white-space: nowrap;
     width: calc(
       var(--page-gutter) + var(--avatar-size-small) + var(--timeline-row-gap) - var(--space-100)
     );
-  }
-
-  .message.collapsed.mention-silent > .collapsed-pending,
-  .message.collapsed.mention-loud > .collapsed-pending {
-    inset-inline-start: var(--space-200);
   }
 
   .message.collapsed :global(.message-actions) {
@@ -896,8 +876,10 @@
        negative margin assumes survives. */
     .message.mention-silent,
     .message.mention-loud {
+      --row-inset-start: calc(var(--page-gutter) - var(--space-100));
+
       margin-inline: calc(-1 * var(--page-gutter));
-      padding-inline: calc(var(--page-gutter) - var(--space-100)) var(--page-gutter);
+      padding-inline: calc(var(--row-inset-start) + var(--selection-gutter)) var(--page-gutter);
     }
 
     /* The rule above resets the whole shorthand, and a collapsed row still
@@ -905,7 +887,8 @@
     .message.collapsed.mention-silent,
     .message.collapsed.mention-loud {
       padding-inline-start: calc(
-        var(--page-gutter) - var(--space-100) + var(--avatar-size-small) + var(--timeline-row-gap)
+        var(--row-inset-start) + var(--selection-gutter) + var(--avatar-size-small) +
+          var(--timeline-row-gap)
       );
     }
   }
@@ -987,23 +970,30 @@
     position: absolute;
   }
 
+  .crypto-indicators {
+    align-self: flex-start;
+    display: flex;
+    gap: var(--space-100);
+    margin-inline-start: var(--space-200);
+  }
+
+  .crypto-indicators > :global(button) {
+    margin-inline-start: 0;
+  }
+
+  .message-content:has(> .crypto-indicators) > .receipt-slot {
+    inset-inline-end: calc(var(--space-200) + var(--font-size-body));
+  }
+
   .receipt-space {
     display: inline-block;
     inline-size: var(--receipt-reserve);
     user-select: none;
   }
 
-  .has-receipts:global([data-receipt-narrow]) {
-    padding-inline-end: calc(var(--receipt-reserve) + var(--space-200));
-  }
-
   /* Move the badge, not the text: Firefox left-aligns an RTL line after a <br> on reflow. */
   .has-receipts:global([data-receipt-flip]) .receipt-slot {
     inset-inline: 0 auto;
-  }
-
-  .has-receipts:global([data-receipt-narrow]) .receipt-space {
-    display: none;
   }
 
   .message header {
@@ -1096,7 +1086,8 @@
     line-height: var(--line-height-body);
   }
 
-  .has-edited :global(.formatted-body) {
+  .has-edited :global(.formatted-body),
+  .has-edited :global(.formatted-body > :is(p, sub[data-md='-#']):last-child) {
     display: inline;
   }
 
@@ -1173,9 +1164,14 @@
     grid-row: 2;
   }
 
-  .message.layout-compact :global(.message-crypto-status) {
+  .message.layout-compact .crypto-indicators {
     grid-column: 3;
     grid-row: 2;
+  }
+
+  .message.layout-compact :global(.undecryptable) {
+    margin-top: 0;
+    padding-block: 0;
   }
 
   .message.layout-compact :global(.message-actions) {
@@ -1183,7 +1179,7 @@
   }
 
   .message.layout-compact.collapsed {
-    padding-inline: var(--page-gutter);
+    padding-inline: calc(var(--row-inset-start) + var(--selection-gutter)) var(--page-gutter);
   }
 
   .compact-gutter {
@@ -1277,7 +1273,7 @@
     margin-inline-start: auto;
   }
 
-  .message.layout-bubble .content-bubble:has(:global(.image, .media-frame-video)) {
+  .message.layout-bubble .content-bubble:has(:global(.image, .sticker, .media-frame-video)) {
     width: fit-content;
   }
 
@@ -1401,7 +1397,7 @@
   }
 
   .message.layout-bubble.own.align-own.collapsed {
-    padding-inline: var(--page-gutter);
+    padding-inline: calc(var(--row-inset-start) + var(--selection-gutter)) var(--page-gutter);
   }
 
   @supports not (color: color-mix(in srgb, black, white)) {

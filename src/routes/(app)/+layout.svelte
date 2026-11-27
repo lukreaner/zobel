@@ -19,11 +19,17 @@
     roomListOptions,
   } from '#lib/rooms/room-list.svelte.js';
   import { roomSectionPath } from '#lib/rooms/permalink.js';
-  import { HOME_SECTION, rememberLastRoom } from '#lib/rooms/last-room.js';
+  import { HOME_SECTION, rememberLastRoom, restoredRoomPath } from '#lib/rooms/last-room.js';
   import { provideSpaceSidebar, SpaceSidebar } from '#lib/spaces/sidebar-layout.svelte.js';
   import { OpenRoomSearch, provideOpenRoomSearch } from '#lib/features/room/room-panels.svelte.js';
   import { PersonaStore, providePersonaStore } from '#lib/personas/personas.svelte.js';
   import { Bookmarks, provideBookmarks } from '#lib/rooms/bookmarks.svelte.js';
+  import {
+    provideThreadSidebar,
+    ThreadSidebar,
+  } from '#lib/features/sidebar/thread-sidebar.svelte.js';
+  import { provideRecentReactions, RecentReactions } from '#lib/emoji/recents.svelte.js';
+  import { provideStickerHistory, StickerHistory } from '#lib/emoji/sticker-history.svelte.js';
   import { EventItems, provideEventItems } from '#lib/features/room/messages/event-items.svelte.js';
   import {
     provideRoomScopes,
@@ -58,6 +64,7 @@
   import { hasPendingSetup } from '#lib/features/auth/setup/setup-record.js';
   import { readText } from '#lib/platform/local-json.js';
   import { watchScheduledQueue } from '#lib/features/composer/scheduled-sender.js';
+  import { scheduledQueue } from '#lib/composer/scheduled-queue.svelte.js';
   import { watchSearchPeers } from '#lib/search/search-peer.js';
   import { runtimeConfig } from '#lib/config/runtime-config.js';
   import {
@@ -83,7 +90,7 @@
   import idleFavicon from '#lib/assets/favicon.png';
   import unreadFavicon from '#lib/assets/res/svg/unread.svg';
   import highlightFavicon from '#lib/assets/res/svg/highlight.svg';
-  import { startSystemBarSync } from '#lib/platform/system-bars.js';
+  import { setKeepScreenOn, startSystemBarSync } from '#lib/platform/system-bars.js';
   import { installAndroidBack } from '#lib/platform/android-back.js';
   import {
     preferences,
@@ -163,7 +170,7 @@
   import { unreadRoomAtOffset, unreadRoomsByPriority } from '#lib/ui/shortcuts/room-jump.js';
   import { markRoomsRead } from '#lib/features/sidebar/nav-rooms.js';
   import { hasUnread } from '#lib/rooms/unread.js';
-  import { roomAtOffset } from '#lib/features/sidebar/visible-rooms.svelte.js';
+  import { roomAtOffset, visibleRoomSection } from '#lib/features/sidebar/visible-rooms.svelte.js';
   import { playSound, type NotificationSound } from '#lib/features/notifications/sound.js';
   import MediaViewerHost from '#lib/ui/media/MediaViewerHost.svelte';
   import ZooAlertControls from '#lib/features/sidebar/ZooAlertControls.svelte';
@@ -182,6 +189,8 @@
   onDestroy(() => stopSearchPeers?.());
   const roomList = new RoomList(core);
   provideRoomList(roomList);
+  const threadSidebar = new ThreadSidebar(core);
+  provideThreadSidebar(threadSidebar);
   $effect(() => {
     roomList.setOptions(roomListOptions());
   });
@@ -192,6 +201,9 @@
   providePersonaStore(new PersonaStore(core));
   const bookmarks = new Bookmarks(core.rpc.account);
   provideBookmarks(bookmarks);
+  provideRecentReactions(new RecentReactions(core));
+  const stickerHistory = new StickerHistory(core);
+  provideStickerHistory(stickerHistory);
   provideEventItems(new EventItems(core.rpc.timeline, () => core.session?.user_id ?? null));
   const roomScopes = new RoomScopes(core);
   provideRoomScopes(roomScopes);
@@ -205,6 +217,11 @@
   });
   provideCallSession(callSession);
   onMount(() => registerDesktopCallShortcuts(callSession));
+  $effect(() => {
+    if (!callSession.active) return;
+    setKeepScreenOn(true);
+    return () => setKeepScreenOn(false);
+  });
   $effect(() => {
     const inputMode = preferences.callInputMode;
     untrack(() => callSession.setInputMode(inputMode));
@@ -336,7 +353,7 @@
     await roomList.whenListed(roomId, NOTIFIED_ROOM_WAIT_MS);
     const invite = roomList.rooms.find((room) => room.room_id === roomId);
     if (invite?.state !== 'invited') return;
-    const answers = new InviteActions(core);
+    const answers = new InviteActions(core, roomList);
     if (outcome === 'accept') await answers.accept(invite);
     else answers.decline(invite);
   }
@@ -396,7 +413,7 @@
 
   const syncDocuments = $derived([
     settingsDocument,
-    workspaceDocument(spaceSidebar),
+    workspaceDocument(spaceSidebar, stickerHistory),
     draftsDocumentFor(core.session?.account_id ?? ''),
     scheduledDocumentFor(core.session?.account_id ?? ''),
   ]);
@@ -880,9 +897,11 @@
     );
   });
 
+  let hasScheduled = $derived(scheduledQueue(core.session?.account_id ?? '').length > 0);
+
   $effect(() => {
     void core.accountRevision;
-    if (core.status !== 'ready') return;
+    if (core.status !== 'ready' || !hasScheduled) return;
     return watchScheduledQueue(core);
   });
 
@@ -979,6 +998,7 @@
       dismissedInvites.start(core);
       presenceSharing.start(core);
       presenceOverride.start(core);
+      threadSidebar.start();
       dmSpaces.start(core);
       spaceNotifications.start(core);
       mediaPreviewSettings.start(core);
@@ -993,6 +1013,7 @@
       dismissedInvites.stop();
       presenceSharing.stop();
       presenceOverride.stop();
+      threadSidebar.stop();
       dmSpaces.stop();
       spaceNotifications.stop();
       mediaPreviewSettings.stop();
@@ -1128,11 +1149,21 @@
     };
   });
 
-  trackRouteFocus();
+  const gotoWithComposerFocus = trackRouteFocus();
 
-  function jumpToRoom(roomId: string): void {
-    // eslint-disable-next-line svelte/no-navigation-without-resolve -- roomSectionPath() resolves the route itself
-    void goto(roomSectionPath(roomList.rooms, roomId));
+  function jumpToRoom(roomId: string, focusComposer = false): void {
+    const path = restoredRoomPath(
+      roomList.rooms,
+      roomId,
+      visibleRoomSection(),
+      preferences.showHome,
+      (spaceId) => roomList.section(spaceId)?.descendants ?? []
+    );
+    if (focusComposer) void gotoWithComposerFocus(path);
+    else {
+      // eslint-disable-next-line svelte/no-navigation-without-resolve -- restoredRoomPath() resolves the route itself
+      void goto(path);
+    }
   }
 
   $effect(() => {
@@ -1207,11 +1238,11 @@
         },
         'navigation.previousRoom': () => {
           const target = roomAtOffset(openRoomId, -1);
-          if (target) jumpToRoom(target);
+          if (target) jumpToRoom(target, true);
         },
         'navigation.nextRoom': () => {
           const target = roomAtOffset(openRoomId, 1);
-          if (target) jumpToRoom(target);
+          if (target) jumpToRoom(target, true);
         },
         'room.markRead': () => {
           const room = roomList.byId(openRoomId);
@@ -1224,13 +1255,13 @@
           if (openRoomId) backToRoomList();
         },
         'navigation.nextUnread': () => {
-          const unread = unreadRoomsByPriority(roomList.rooms, openRoomId, roomList.unreadFor);
+          const unread = unreadRoomsByPriority(roomList.rooms, openRoomId, roomList.badgeUnreadFor);
           const target = unread[0];
           if (!target) return;
           jumpToRoom(target.room_id);
         },
         'navigation.cycleNextUnread': () => {
-          const target = unreadRoomAtOffset(roomList.rooms, openRoomId, 1, roomList.unreadFor);
+          const target = unreadRoomAtOffset(roomList.rooms, openRoomId, 1, roomList.badgeUnreadFor);
           if (target) jumpToRoom(target.room_id);
         },
         'navigation.focusComposer': () => {
@@ -1252,7 +1283,12 @@
           cycleRegion(-1);
         },
         'navigation.cyclePreviousUnread': () => {
-          const target = unreadRoomAtOffset(roomList.rooms, openRoomId, -1, roomList.unreadFor);
+          const target = unreadRoomAtOffset(
+            roomList.rooms,
+            openRoomId,
+            -1,
+            roomList.badgeUnreadFor
+          );
           if (target) jumpToRoom(target.room_id);
         },
       },

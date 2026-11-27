@@ -75,6 +75,7 @@ const cases: Record<string, TimelineItemView> = {
       sender_mentioned: false,
       body: long,
       fallback: null,
+      emotes: [],
     },
   },
   image: timelineImage('general-19'),
@@ -193,8 +194,12 @@ const cases: Record<string, TimelineItemView> = {
     thread_summary: {
       num_replies: 12,
       latest_event_id: '$reply:example.test',
+      latest_timestamp: null,
+      latest_sender: null,
+      current_user_participated: null,
       latest_body: long,
       latest_fallback: null,
+      latest_emotes: [],
     },
   },
   'moderation notice': {

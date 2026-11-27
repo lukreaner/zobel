@@ -5,8 +5,7 @@
   import { useCoreClient } from '#lib/core/context.js';
   import { UserProfile } from '#lib/profile/user-profile.svelte.js';
   import Avatar from '#lib/ui/primitives/Avatar.svelte';
-  import { senderDisplayColors } from '#lib/features/room/members/members.js';
-  import { hasSenderRoles, useSenderRoles } from '#lib/features/room/members/sender-roles.js';
+  import { useSenderColors } from '#lib/features/room/members/members.js';
   import SenderName from '#lib/features/room/members/SenderName.svelte';
   import { useRoomScopes } from '#lib/features/room/messages/message-scope.svelte.js';
   import { MessageSender } from '#lib/features/room/timeline/message-sender.svelte.js';
@@ -31,19 +30,14 @@
   import PlayIcon from 'phosphor-svelte/lib/PlayIcon';
   import PushPinIcon from 'phosphor-svelte/lib/PushPinIcon';
 
+  import type { ForumThreadCallbacks } from './forum-thread-callbacks';
   import { VOTE, type ForumLayout, type ForumThread } from './forum-threads';
 
-  interface Props {
+  interface Props extends ForumThreadCallbacks {
     thread: ForumThread;
-    onOpen: (eventId: string) => void;
     canDelete: boolean;
-    onEdit?: (thread: ForumThread) => void;
-    onDelete: (eventId: string, reason: string | null) => void;
     roomId: string;
-    onReact?: (eventId: string, key: string) => void;
-    onCopyLink: (eventId: string) => void;
     pinned?: boolean;
-    onPin?: (eventId: string) => void;
     layout?: ForumLayout;
   }
 
@@ -63,7 +57,7 @@
   const roomMedia = hasRoomMediaPreviews() ? useRoomMediaPreviews() : null;
   const scope = useRoomScopes().acquire(untrack(() => roomId));
   onDestroy(scope.release);
-  const senderRoles = hasSenderRoles() ? useSenderRoles() : null;
+  const colorsFor = useSenderColors();
   const profile = new UserProfile(useCoreClient(), () => thread.sender);
   const sender = new MessageSender(() => ({
     item: thread.item,
@@ -72,14 +66,11 @@
     cosmetics: scope.cosmetics.for(thread.sender),
   }));
   let senderColors = $derived(
-    senderDisplayColors(
-      thread.sender ?? '',
-      profile.current,
-      sender.persona,
-      thread.isOwn,
-      sender.persona ? null : scope.cosmetics.for(thread.sender),
-      thread.sender ? (senderRoles?.(thread.sender)?.color ?? null) : null
-    )
+    colorsFor(thread.sender, profile.current, {
+      persona: sender.persona,
+      isOwn: thread.isOwn,
+      cosmetics: scope.cosmetics.for(thread.sender),
+    })
   );
   let deleteOpen = $state(false);
   let sheetOpen = $state(false);
@@ -123,6 +114,7 @@
               .catch(() => toasts.error(i18n.t('errors.actionFailed')));
           },
     onCopyLink: () => onCopyLink(thread.eventId),
+    onCopyMatrixLink: () => onCopyLink(thread.eventId, 'matrix'),
     onPin: onPin ? () => onPin(thread.eventId) : undefined,
     pinned,
     onDelete: canDelete ? () => (deleteOpen = true) : undefined,
@@ -307,7 +299,8 @@
     background: var(--surface-container-hover);
   }
 
-  @media (any-hover: hover) and (any-pointer: fine) {
+  /* Not any-hover: phones report it, and a tap there shows actions that vanish on release. */
+  @media (hover: hover) and (pointer: fine) {
     .forum-thread-card:hover :global(.message-actions),
     .forum-thread-card:focus-within :global(.message-actions) {
       opacity: 1;

@@ -1,6 +1,12 @@
 import { onDestroy, type Snippet } from 'svelte';
+import { on } from 'svelte/events';
 
-import type { MemberView, PerMessageProfileView, TimelineItemView } from '#src/generated/protocol';
+import type {
+  MemberView,
+  PerMessageProfileView,
+  TimelineItemView,
+  UrlPreviewView,
+} from '#src/generated/protocol';
 
 import { copyText } from '#lib/platform/clipboard.js';
 import { shareLink, sharesLinks } from '#lib/platform/files.js';
@@ -16,12 +22,14 @@ import { preferences } from '#lib/settings/preferences.svelte.js';
 import { type TimelineLayout } from '#lib/settings/definitions.js';
 import { useBookmarks } from '#lib/rooms/bookmarks.svelte.js';
 import { useRoomCosmetics, type SenderCosmetics } from '#lib/rooms/room-cosmetics.svelte.js';
-import type { MatrixLink } from '#lib/rooms/matrix-link.js';
+import { matrixLinkDestination, parseMatrixLink, type MatrixLink } from '#lib/rooms/matrix-link.js';
+import { useRoomList } from '#lib/rooms/room-list.svelte.js';
 
-import { senderDisplayColors } from '../members/members.js';
+import { useSenderColors } from '../members/members.js';
 import { hasSenderRoles, useSenderRoles } from '../members/sender-roles.js';
 import { MessageSwipe } from '../messages/message-swipe.svelte.js';
 import { useMessageMenu } from '../messages/message-menu-open.svelte.js';
+import { hasMessageSelection, useMessageSelection } from '../messages/message-selection.svelte.js';
 import type { MessageActions } from '../messages/message-menu-items';
 import { useMessageDialogs } from '../messages/message-dialogs.svelte.js';
 import {
@@ -34,14 +42,7 @@ import { TimelineItemProfiles } from './timeline-item-profiles.svelte';
 import { TimelineItemEngagement } from './timeline-item-engagement.svelte';
 import { selectedText, withSelectedText } from './timeline-item-selection';
 
-export interface TimelineItemProps extends MessageCallbacks {
-  item: TimelineItemView;
-  collapsed: boolean;
-  unreadCount?: number;
-  replyPersona?: PerMessageProfileView | null;
-  threadPersona?: PerMessageProfileView | null;
-  roomId?: string;
-  highlighted?: boolean;
+export interface TimelineCallbacks extends MessageCallbacks {
   onMatrixLink?: (link: MatrixLink, anchor: HTMLAnchorElement) => void;
   onSenderProfile?: (
     userId: string,
@@ -51,6 +52,20 @@ export interface TimelineItemProps extends MessageCallbacks {
   onMentionUser?: (userId: string, name: string) => void;
   onRetrySend?: (transactionId: string) => void;
   onCancelSend?: (transactionId: string) => void;
+  onOpenMedia?: (eventId: string) => void;
+  onVotePoll?: (eventId: string, answers: string[]) => void;
+  onEndPoll?: (eventId: string) => void;
+  onSwipeMembers?: () => void;
+}
+
+export interface TimelineItemProps extends TimelineCallbacks {
+  item: TimelineItemView;
+  collapsed: boolean;
+  unreadCount?: number;
+  replyPersona?: PerMessageProfileView | null;
+  threadPersona?: PerMessageProfileView | null;
+  roomId?: string;
+  highlighted?: boolean;
   currentUserId?: string | null;
   canRedactOwn?: boolean;
   canRedactOthers?: boolean;
@@ -68,15 +83,11 @@ export interface TimelineItemProps extends MessageCallbacks {
   avatarsInHeaders?: boolean;
   members?: readonly MemberView[];
   onJumpToEvent?: (eventId: string) => void;
-  onOpenMedia?: (eventId: string) => void;
-  onVotePoll?: (eventId: string, answers: string[]) => void;
-  onEndPoll?: (eventId: string) => void;
   events?: TimelineEventIndex;
   onMenuOpenChange?: (open: boolean) => void;
   placeholder?: boolean;
   placeholderCharacters?: number;
   overrideCosmetics?: SenderCosmetics | null;
-  onSwipeMembers?: () => void;
 }
 
 export interface TimelineRowOptions extends MessageCallbacks {
@@ -92,6 +103,7 @@ export interface TimelineRowOptions extends MessageCallbacks {
   overrideCosmetics: SenderCosmetics | null;
   replySender: string | null;
   hasLinkPreviews: boolean;
+  linkPreviews: readonly UrlPreviewView[];
   onMenuOpenChange?: (open: boolean) => void;
   onSwipeMembers?: () => void;
   onCancelSend?: (transactionId: string) => void;
@@ -105,6 +117,7 @@ export class TimelineRow {
   readonly core = useCoreClient();
   readonly dialogs = useMessageDialogs();
   readonly menu = useMessageMenu();
+  readonly selection = hasMessageSelection() ? useMessageSelection() : null;
   readonly profiles = new TimelineItemProfiles(this.core);
   readonly engagement = new TimelineItemEngagement(() => this.element);
   readonly actionExecutor: MessageActionExecutor;
@@ -112,7 +125,9 @@ export class TimelineRow {
   readonly press: LongPress;
   readonly #doubleTap: DoubleTap;
   readonly #roomCosmetics = useRoomCosmetics();
+  readonly #roomList = useRoomList();
   readonly #senderRoles = hasSenderRoles() ? useSenderRoles() : null;
+  readonly #senderColors = useSenderColors();
   readonly #options: () => TimelineRowOptions;
 
   constructor(options: () => TimelineRowOptions) {
@@ -133,13 +148,19 @@ export class TimelineRow {
         pinnedEvents: usePinnedEvents(),
         bookmarks: useBookmarks(),
         dialogs: this.dialogs,
+        isDirect: (roomId) => this.#roomList.byId(roomId)?.is_direct ?? false,
       }
     );
     this.swipe = new MessageSwipe({
       enabled: () =>
-        this.actionable && (this.swipeOpensMembers || this.actions.onReply !== undefined),
+        !this.selecting &&
+        this.actionable &&
+        (this.swipeOpensMembers || this.actions.onReply !== undefined),
       canEdit: () =>
-        this.actionable && !this.swipeOpensMembers && this.actions.onEdit !== undefined,
+        !this.selecting &&
+        this.actionable &&
+        !this.swipeOpensMembers &&
+        this.actions.onEdit !== undefined,
       onReply: () => {
         const { selected, onCancelContext, onSwipeMembers } = this.#options();
         if (this.swipeOpensMembers) onSwipeMembers?.();
@@ -153,7 +174,7 @@ export class TimelineRow {
       },
     });
     this.press = new LongPress({
-      enabled: () => this.actionable || this.canCancelSend,
+      enabled: () => !this.selecting && (this.actionable || this.canCancelSend),
       onPress: (event) => {
         const { item } = this.#options();
         this.menu.set(item.id, false);
@@ -166,7 +187,13 @@ export class TimelineRow {
       },
     });
     this.#doubleTap = new DoubleTap(() => {
-      if (!this.actionable || !preferences.doubleTapReact || !this.actions.onReact) return;
+      if (
+        this.selecting ||
+        !this.actionable ||
+        !preferences.doubleTapReact ||
+        !this.actions.onReact
+      )
+        return;
       hapticFeedback();
       this.actions.onReact(preferences.doubleTapReaction);
     });
@@ -195,14 +222,12 @@ export class TimelineRow {
   });
   readonly senderColors = $derived.by(() => {
     const { item } = this.#options();
-    return senderDisplayColors(
-      item.sender ?? '',
-      this.profile,
-      item.per_message_profile,
-      item.is_own,
-      this.senderCosmetics,
-      this.senderRole?.color ?? null
-    );
+    return this.#senderColors(item.sender, this.profile, {
+      persona: item.per_message_profile,
+      isOwn: item.is_own,
+      cosmetics: this.senderCosmetics,
+      roleColor: this.senderRole?.color,
+    });
   });
   readonly stalled = $derived.by(() => {
     const { send_state } = this.#options().item;
@@ -213,6 +238,10 @@ export class TimelineRow {
     () =>
       preferences.messageSwipeAction === 'members' && this.#options().onSwipeMembers !== undefined
   );
+  readonly selecting = $derived(this.selection?.active ?? false);
+  readonly multiSelected = $derived.by(
+    () => this.selection?.has(this.#options().item.event_id) ?? false
+  );
   readonly actionable = $derived.by(() => {
     const { item, preview } = this.#options();
     return !preview && item.event_id !== null && this.stalled === null && !this.pending;
@@ -222,7 +251,16 @@ export class TimelineRow {
     return !preview && this.pending && item.transaction_id !== null && onCancelSend !== undefined;
   });
   readonly actions = $derived.by((): MessageActions => {
-    if (!this.canCancelSend) return this.actionExecutor.actions;
+    if (!this.canCancelSend) {
+      const base = this.actionExecutor.actions;
+      if (!this.actionable || this.selection === null || this.selecting) return base;
+      return {
+        ...base,
+        onSelect: () => {
+          this.selection?.enter(this.#options().item);
+        },
+      };
+    }
     return {
       onCancelSend: () => {
         const { item, onCancelSend } = this.#options();
@@ -231,16 +269,42 @@ export class TimelineRow {
     };
   });
   readonly showActions = $derived(
-    (this.actionable || this.canCancelSend) && (this.engagement.engaged || this.actionsPinned)
+    !this.selecting &&
+      (this.actionable || this.canCancelSend) &&
+      (this.engagement.engaged || this.actionsPinned)
   );
 
   attach = (node: HTMLElement): (() => void) => {
     this.element = node;
     const detachSwipe = this.swipe.attach(node);
+    const offClick = on(node, 'click', this.#onRowClick);
     return () => {
       detachSwipe();
+      offClick();
       this.element = null;
     };
+  };
+
+  #onRowClick = (event: MouseEvent): void => {
+    const fromToggle =
+      event.target instanceof Element && event.target.closest('.select-toggle') !== null;
+    if (
+      !this.selecting ||
+      !this.actionable ||
+      (this.#options().editing && !fromToggle) ||
+      event.button !== 0 ||
+      event.defaultPrevented
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const focusedHere = this.element?.contains(document.activeElement) ?? false;
+    const { item } = this.#options();
+    if (event.shiftKey) this.selection?.selectRange(item);
+    else this.selection?.toggle(item);
+    if (focusedHere && !this.selection?.active) {
+      this.element?.focus();
+    }
   };
 
   pinActions = (open: boolean): void => {
@@ -266,6 +330,10 @@ export class TimelineRow {
   };
 
   openContextMenu = (event: MouseEvent): void => {
+    if (this.selecting) {
+      event.preventDefault();
+      return;
+    }
     const { item } = this.#options();
     if (this.press.touch || touchContextMenu(event)) {
       event.preventDefault();
@@ -291,13 +359,16 @@ export class TimelineRow {
     }));
   };
 
-  #linkActions(event: Event): Pick<MessageActions, 'onCopyHref' | 'onShareHref'> {
-    const link =
-      event.target instanceof Element
-        ? event.target.closest<HTMLAnchorElement>('a[href]')?.href
-        : null;
+  #linkActions(
+    event: Event
+  ): Pick<MessageActions, 'linkDestination' | 'onCopyHref' | 'onShareHref'> {
+    const target = event.target instanceof Element ? event.target : null;
+    const link = target?.closest<HTMLAnchorElement>('a[href]')?.href;
     if (!link || !this.actionable) return {};
+    const concealed = target.closest('[data-mx-spoiler]:not([aria-pressed="false"])');
+    const matrix = concealed ? null : parseMatrixLink(link);
     return {
+      linkDestination: matrix ? matrixLinkDestination(matrix) : undefined,
       onCopyHref: () => {
         void copyText(link)
           .then(() => toasts.info(i18n.t('timeline.linkCopied')))

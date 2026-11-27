@@ -18,13 +18,17 @@ import {
 } from '#lib/settings/preferences.svelte.js';
 import { configuration } from './configuration.svelte.js';
 import { appName } from './brand.js';
-import { loadDeploymentTheme } from './theme.js';
+import { loadDeploymentTheme } from './theme.svelte.js';
 export { removeAccountConfiguration } from '#lib/config/account-discovery.js';
 
 let revision = 0;
 let loginRevision = 0;
+let loaded = false;
 
+// SvelteKit reruns the root load when a link to the current page is clicked.
 export async function loadDeployment(): Promise<void> {
+  if (loaded) return;
+  loaded = true;
   configuration.base = await runtimeConfig();
   applyDeploymentDefaults(configuration.base.settingsDefaults);
   applyDeploymentLocks(configuration.base.settingsLocked);
@@ -35,7 +39,7 @@ function applyAccount(config: AccountConfig | null): void {
   configuration.account = mergeAccountConfig(configuration.base, config);
   applyAccountPreferences(config?.settingsDefaults ?? {}, config?.settingsLocked ?? {});
   setAppName(appName(configuration.account));
-  void loadDeploymentTheme(configuration.account.branding.themeUrl);
+  void loadDeploymentTheme(configuration.account.branding);
 }
 
 export function activateAccountConfiguration(

@@ -13,7 +13,7 @@
   import { loadE2eePolicy } from '#lib/deployment/e2ee-policy.svelte.js';
   import { i18n } from '#lib/i18n.js';
   import { isUserId } from '#lib/guards.js';
-  import { roomPathParamFromId } from '#lib/rooms/room-list.svelte.js';
+  import { roomPathParamFromId, useRoomList } from '#lib/rooms/room-list.svelte.js';
   import Alert from '#lib/ui/primitives/Alert.svelte';
   import Button from '#lib/ui/primitives/Button.svelte';
   import DialogFrame from '#lib/ui/primitives/DialogFrame.svelte';
@@ -23,6 +23,7 @@
   import SettingsRow from '#lib/ui/primitives/SettingsRow.svelte';
   import SettingsSection from '#lib/ui/primitives/SettingsSection.svelte';
   import Switch from '#lib/ui/primitives/Switch.svelte';
+  import { isComposingKey } from '#lib/ui/shortcuts/binding.js';
 
   import '#lib/ui/primitives/settings-row.css';
   import TextInput from '#lib/ui/primitives/TextInput.svelte';
@@ -32,6 +33,7 @@
     readCreate,
     readReplacementId,
     readTombstone,
+    replacementJoinRule,
   } from './room-upgrade';
   import { canSendState } from './permission-groups';
 
@@ -44,6 +46,7 @@
 
   let { room, levels, ownPowerLevel, onClose }: Props = $props();
   const core = useCoreClient();
+  const roomList = useRoomList();
 
   let version = $state<string | null>(null);
   let predecessor = $state<string | null>(null);
@@ -67,6 +70,18 @@
 
   let roomId = $derived(room?.room_id ?? null);
   let isSpace = $derived(room?.room_kind === 'space');
+  let parentSpaces = $derived(
+    roomId === null
+      ? []
+      : roomList.rooms
+          .filter(
+            (space) =>
+              space.room_kind === 'space' &&
+              space.state === 'joined' &&
+              space.space_children.some((child) => child.room_id === roomId && !child.private)
+          )
+          .map((space) => space.room_id)
+  );
   let canUpgrade = $derived(canSendState(levels, ownPowerLevel, 'm.room.tombstone'));
   let allowCreators = $derived(mode === 'server' && additionalCreatorsSupported(target));
   let replacementId = $derived.by(() => {
@@ -177,8 +192,22 @@
     creatorDraft = '';
   }
 
+  async function manageableSpaces(): Promise<string[]> {
+    const spaces = parentSpaces;
+    const checks = await Promise.all(
+      spaces.map((spaceId) =>
+        core.rpc.members
+          .permissions({ room_id: spaceId })
+          .then((permissions) => permissions.can_manage_children)
+          .catch(() => false)
+      )
+    );
+    return spaces.filter((_, index) => checks[index]);
+  }
+
   async function replaceWithNewRoom(id: string): Promise<string> {
     const kind = room?.room_kind ?? 'text';
+    const spaces = await manageableSpaces();
     const next = await createRoom(core.rpc, {
       name: room?.name,
       topic: room?.topic,
@@ -187,12 +216,25 @@
       encrypted: encrypted && !(await core.e2eePolicy()).forceDisabled,
       room_version: target,
       predecessor: id,
+      join_rule: replacementJoinRule(room?.join_rule),
+      parent_space: spaces[0] ?? null,
     });
     await core.rpc.rooms.setTombstone({
       room_id: id,
       replacement_room: next,
       body: messageDraft.trim() || defaultBody,
     });
+    await Promise.all(
+      spaces.map(async (spaceId, index) => {
+        try {
+          if (index > 0)
+            await core.rpc.spaces.add({ space_id: spaceId, room_id: next, suggested: null });
+          await core.rpc.spaces.remove({ space_id: spaceId, room_id: id });
+        } catch (error) {
+          console.warn('[sable room] could not move the space listing', spaceId, error);
+        }
+      })
+    );
     return next;
   }
 
@@ -385,7 +427,7 @@
             placeholder={i18n.t('room.createInvitePlaceholder')}
             disabled={upgrading}
             onkeydown={(event: KeyboardEvent) => {
-              if (event.key !== 'Enter') return;
+              if (event.key !== 'Enter' || isComposingKey(event)) return;
               event.preventDefault();
               addCreator();
             }}

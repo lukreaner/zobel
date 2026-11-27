@@ -191,6 +191,14 @@
         "themeUrl": {
           "type": "string",
           "pattern": "^(https?://|/)"
+        },
+        "lightThemeUrl": {
+          "type": "string",
+          "pattern": "^(https?://|/)"
+        },
+        "darkThemeUrl": {
+          "type": "string",
+          "pattern": "^(https?://|/)"
         }
       }
     },
@@ -359,7 +367,27 @@
           ],
           "default": "system"
         },
+        "deploymentTheme": {
+          "title": "Use this server’s theme",
+          "type": "boolean",
+          "default": true
+        },
+        "saturation": {
+          "title": "Saturation",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 1
+        },
         "quickCss": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundImage": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundColor": {
           "type": "string",
           "default": ""
         },
@@ -451,6 +479,11 @@
           ],
           "default": "always"
         },
+        "showEncryptionStatusIcon": {
+          "title": "Show encryption status icon",
+          "type": "boolean",
+          "default": true
+        },
         "voiceParticipantPlacement": {
           "title": "Voice room participants",
           "enum": [
@@ -464,6 +497,14 @@
           "title": "Room banners above the list",
           "type": "boolean",
           "default": true
+        },
+        "bannerFit": {
+          "title": "Banner size",
+          "enum": [
+            "fixed",
+            "image"
+          ],
+          "default": "fixed"
         },
         "showDmTopics": {
           "title": "Show topics in direct messages",
@@ -603,7 +644,7 @@
           "default": true
         },
         "showHome": {
-          "title": "All rooms in the sidebar",
+          "title": "Show Home with all rooms",
           "type": "boolean",
           "default": false
         },
@@ -662,6 +703,11 @@
           "type": "boolean",
           "default": true
         },
+        "showActiveThreadsInSidebar": {
+          "title": "Show recent threads in the sidebar",
+          "type": "boolean",
+          "default": true
+        },
         "showAlertZoo": {
           "title": "Show alert zoo",
           "type": "boolean",
@@ -715,6 +761,11 @@
           "title": "Hide members in read-only rooms",
           "type": "boolean",
           "default": true
+        },
+        "hideSentBeforeJoined": {
+          "title": "Hide messages sent before you joined",
+          "type": "boolean",
+          "default": false
         },
         "showTombstoneEvents": {
           "title": "Show removed-message placeholders",
@@ -825,6 +876,7 @@
         "roomSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -833,6 +885,7 @@
         "directSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -1028,6 +1081,20 @@
             "keep"
           ],
           "default": "location"
+        },
+        "matrixLinkSelector": {
+          "title": "External Matrix links",
+          "enum": [
+            "sable",
+            "matrix",
+            "custom"
+          ],
+          "default": "sable"
+        },
+        "matrixLinkCustom": {
+          "title": "Custom link host",
+          "type": "string",
+          "default": ""
         },
         "personaPicker": {
           "title": "Show profile picker in the composer",
@@ -1468,7 +1535,7 @@
             "1440",
             "2160"
           ],
-          "default": "720"
+          "default": "1080"
         },
         "callScreenBitrate": {
           "title": "Screen sharing maximum bitrate",
@@ -1503,7 +1570,7 @@
             "vp9",
             "av1"
           ],
-          "default": "h264"
+          "default": "vp8"
         },
         "callSimulcast": {
           "title": "Use simulcast",
@@ -1854,7 +1921,27 @@
           ],
           "default": "system"
         },
+        "deploymentTheme": {
+          "title": "Use this server’s theme",
+          "type": "boolean",
+          "default": true
+        },
+        "saturation": {
+          "title": "Saturation",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 1
+        },
         "quickCss": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundImage": {
+          "type": "string",
+          "default": ""
+        },
+        "chatBackgroundColor": {
           "type": "string",
           "default": ""
         },
@@ -1946,6 +2033,11 @@
           ],
           "default": "always"
         },
+        "showEncryptionStatusIcon": {
+          "title": "Show encryption status icon",
+          "type": "boolean",
+          "default": true
+        },
         "voiceParticipantPlacement": {
           "title": "Voice room participants",
           "enum": [
@@ -1959,6 +2051,14 @@
           "title": "Room banners above the list",
           "type": "boolean",
           "default": true
+        },
+        "bannerFit": {
+          "title": "Banner size",
+          "enum": [
+            "fixed",
+            "image"
+          ],
+          "default": "fixed"
         },
         "showDmTopics": {
           "title": "Show topics in direct messages",
@@ -2098,7 +2198,7 @@
           "default": true
         },
         "showHome": {
-          "title": "All rooms in the sidebar",
+          "title": "Show Home with all rooms",
           "type": "boolean",
           "default": false
         },
@@ -2157,6 +2257,11 @@
           "type": "boolean",
           "default": true
         },
+        "showActiveThreadsInSidebar": {
+          "title": "Show recent threads in the sidebar",
+          "type": "boolean",
+          "default": true
+        },
         "showAlertZoo": {
           "title": "Show alert zoo",
           "type": "boolean",
@@ -2210,6 +2315,11 @@
           "title": "Hide members in read-only rooms",
           "type": "boolean",
           "default": true
+        },
+        "hideSentBeforeJoined": {
+          "title": "Hide messages sent before you joined",
+          "type": "boolean",
+          "default": false
         },
         "showTombstoneEvents": {
           "title": "Show removed-message placeholders",
@@ -2320,6 +2430,7 @@
         "roomSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -2328,6 +2439,7 @@
         "directSort": {
           "enum": [
             "recent",
+            "unread-first",
             "name-asc",
             "name-desc"
           ],
@@ -2523,6 +2635,20 @@
             "keep"
           ],
           "default": "location"
+        },
+        "matrixLinkSelector": {
+          "title": "External Matrix links",
+          "enum": [
+            "sable",
+            "matrix",
+            "custom"
+          ],
+          "default": "sable"
+        },
+        "matrixLinkCustom": {
+          "title": "Custom link host",
+          "type": "string",
+          "default": ""
         },
         "personaPicker": {
           "title": "Show profile picker in the composer",
@@ -2963,7 +3089,7 @@
             "1440",
             "2160"
           ],
-          "default": "720"
+          "default": "1080"
         },
         "callScreenBitrate": {
           "title": "Screen sharing maximum bitrate",
@@ -2998,7 +3124,7 @@
             "vp9",
             "av1"
           ],
-          "default": "h264"
+          "default": "vp8"
         },
         "callSimulcast": {
           "title": "Use simulcast",
