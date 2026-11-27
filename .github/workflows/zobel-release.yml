@@ -132,8 +132,13 @@ jobs:
           yes | "$sdkmanager" --licenses > /dev/null || true
           "$sdkmanager" --install "platform-tools" "platforms;$(pin ANDROID_PLATFORM)" \
             "build-tools;$(pin ANDROID_BUILD_TOOLS_VERSION)" "ndk;$ndk" > /dev/null
-          echo "NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
-          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/$(pin ANDROID_BUILD_TOOLS_VERSION)" >> "$GITHUB_ENV"
+          {
+            echo "NDK_HOME=$ANDROID_HOME/ndk/$ndk"
+            # The vendored OpenSSL looks for aarch64-linux-android-ranlib, which current NDKs
+            # no longer ship; Sable points it at llvm-ranlib the same way (.mise/config.toml).
+            echo "RANLIB_aarch64_linux_android=$ANDROID_HOME/ndk/$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
+            echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/$(pin ANDROID_BUILD_TOOLS_VERSION)"
+          } >> "$GITHUB_ENV"
 
       - name: Install build dependencies
         run: |
