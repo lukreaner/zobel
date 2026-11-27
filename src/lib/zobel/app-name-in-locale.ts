@@ -15,6 +15,7 @@ export const APP_NAME_KEYS: readonly string[] = [
   'room.appearanceHideBridgesHint',
   'room.moderationProtectionUnknown',
   'settings.callGlobalShortcutsHint',
+  'settings.deploymentThemeHint',
   'settings.logoutServer',
   'settings.logoutServerFailed',
   'settings.matrixLinkHandler',
