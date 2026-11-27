@@ -38,6 +38,12 @@ The sync script keeps Zobel's version of these and drops Sable's changes to them
 Everything under a `zobel` directory (`zobel`, `src/lib/zobel`, `scripts/zobel`) and this
 page exist only in Zobel, so they never conflict.
 
+## Keeping the README's list current
+
+The README's section "How Zobel differs from Sable" lists every difference people would
+notice. Whenever a change adds, removes or alters such a difference, update that list in the
+same commit, along with the change file in `zobel/changes`.
+
 ## Edits to Sable's files
 
 These are the places where Zobel changes a file that Sable also maintains. Each is a few

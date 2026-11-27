@@ -4,14 +4,26 @@ Zobel is a [Matrix](https://matrix.org) client for the web, desktop and mobile, 
 
 It is a fork of [Sable](https://git.sable.moe/SableClient/sable-next) and stays close to it: changes made in Sable are merged into Zobel every day. "Zobel" is the German word for sable.
 
-## Status
+## How Zobel differs from Sable
 
-Zobel is at an early stage.
+Zobel is at an early stage and changes little so far. This list is kept up to date with every change that makes Zobel differ from Sable.
 
-- **Web app:** carries the Zobel name and builds from this repository. There is no hosted instance yet, so you build and serve it yourself.
-- **Android app:** builds as Zobel, with its own app identifier, so it installs next to Sable. Each [release](https://github.com/lukreaner/zobel/releases) carries the APK, and testers get it through Firebase App Distribution.
-- **Desktop and iOS apps:** still build under Sable's name and app identifiers. Zobel does not publish them.
-- **Services:** push notifications, link previews, the GIF proxy, the theme catalogue and supporter badges are still Sable's, as configured in [`static/config.json`](static/config.json). Sable's [privacy policy](https://sable.moe/privacy) describes them.
+**What Zobel does differently**
+
+- **Name.** The app is called Zobel: in the window title, the installed web app, and the interface text that names the app. Text about the Sable project, its services, themes and supporters still says Sable.
+- **Links.** The source code link, the update check and the bug report form lead to [this repository](https://github.com/lukreaner/zobel) and its [issue tracker](https://github.com/lukreaner/zobel/issues), not to Sable's.
+- **No community rooms.** Sable's support and feature-request rooms are for Sable's own client, so Zobel does not link to them.
+- **"Powered by Sable".** Settings → About always says that Zobel is based on Sable.
+- **Android app.** Built as Zobel with its own app identifier (`io.github.lukreaner.zobel`), so it installs next to Sable instead of replacing it. Each [release](https://github.com/lukreaner/zobel/releases) carries the APK, and testers get it through Firebase App Distribution. Like Sable's FOSS build, it receives push notifications through UnifiedPush, not Firebase Cloud Messaging. The icon and the link schemes (`sable`, `matrix`, `moe.sable.next`) are still Sable's.
+- **Versions and changelog.** Zobel has its own version numbers (`zobel-v0.1.0`, …) and [its own changelog](zobel/CHANGELOG.md), which also lists what came in from Sable.
+- **GitHub workflows.** Sable's workflows, which build and publish Sable's releases, are removed. Zobel has two of its own: the daily merge of Sable's changes and the release.
+
+**What is still Sable's**
+
+- **Everything else in the app.** Features, design and fixes come from Sable unchanged and arrive in Zobel within a day.
+- **Services.** Push notifications, link previews, the GIF proxy, the theme catalogue and supporter badges are Sable's, as configured in [`static/config.json`](static/config.json). Sable's [privacy policy](https://sable.moe/privacy) describes them.
+- **Desktop and iOS apps.** They still build under Sable's name and app identifiers. Zobel does not publish them.
+- **Web app hosting.** There is no hosted Zobel yet, so you build and serve the web app yourself.
 
 ## Running it
 
