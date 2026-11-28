@@ -1,5 +1,20 @@
 # Zobel Changelog
 
+## 0.2.0 (2026-11-28)
+
+### Features
+
+* On Android, GIFs, stickers and images from keyboards such as Gboard can be inserted into the message field; they used to be greyed out.
+* A new look, "Messenger" (Settings → Appearance → Look), arranges Zobel like Signal or Beeper: a menu of lists in place of the bar of spaces, larger chat rows with the last message and its time, and messages in bubbles with yours on the right in the accent colour. In chats with one other person their name and picture are left out.
+
+### Fixes
+
+* After going through several chats on an unfolded foldable and folding it shut, the back gesture now leads to the list of chats instead of through every chat seen before.
+* Opening a chat no longer opens the keyboard on touch screens in the split view, such as an unfolded foldable. "Jump to the message field when opening a chat" (Settings → Composer) can set this to always or never.
+* "Seen" now shows right away in a chat opened by tapping a notification on Android, instead of only after leaving the chat and opening it again.
+
+Based on Sable 26.11.4.
+
 ## 0.1.1 (2026-11-28)
 
 ### Fixes
