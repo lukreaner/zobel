@@ -1,5 +1,15 @@
 # Zobel Changelog
 
+## 0.4.0 (2026-11-28)
+
+### Features
+
+* On Android, Zobel has its own icon: a sable drawn for Zobel, as a sticker, also on the splash screen and in a one-colour version for themed icons. Settings → Appearance → App icon offers the same sable as a paper cut, linocut, watercolour, risograph, chalk drawing, line art or pixel art, and Sable's icon.
+* The chat list can show whether your last message has been sent: a clock while it is being sent, a tick once it has been (Settings → Sidebar → "Show whether your last message was sent", where message previews are on).
+* On a phone, tapping message search in the chat list opens the keyboard right away, so you can start typing without tapping the search field first.
+
+Based on Sable 26.11.5.
+
 ## 0.3.0 (2026-11-28)
 
 ### Features
