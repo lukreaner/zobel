@@ -1,5 +1,13 @@
 # Zobel Changelog
 
+## 0.1.1 (2026-11-28)
+
+### Fixes
+
+* On an unfolded foldable, the chat no longer fills the whole screen while the keyboard is open; it stays next to the room list.
+
+Based on Sable 26.11.4.
+
 ## 0.1.0 (2026-11-27)
 
 ### Features
