@@ -94,6 +94,10 @@ test('the messenger look puts a list menu, times and bubbles in place', async ({
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/direct');
   await expect(row).toBeVisible({ timeout: COLD_BOOT_TIMEOUT });
+  // The list menu shows the whole name of the list, not a few letters of it.
+  const title = page.locator('.zobel-section-title');
+  await expect(title).toHaveText('Direct messages');
+  expect(await title.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await shot(page, 'messenger-phone-list');
 });
 

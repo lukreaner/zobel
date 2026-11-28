@@ -25,7 +25,10 @@ html[data-zobel-look='messenger'] .compact-tools {
 
 /* ── The list of chats ─────────────────────────────────────────────────────────────────── */
 
+/* The list menu takes the room the title had; it was squeezed to a few letters. */
 html[data-zobel-look='messenger'] .room-nav-header h2 {
+  display: flex;
+  flex: 1 1 auto;
   font-size: var(--font-size-subheading);
   min-width: 0;
 }
