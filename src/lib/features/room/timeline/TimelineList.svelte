@@ -89,6 +89,7 @@
     usesManualReadReceipts,
   } from '#lib/zobel/manual-read-receipts.svelte.js';
   import SeenBar from '#lib/zobel/SeenBar.svelte';
+  import HoldVisibleReceipt from '#lib/zobel/HoldVisibleReceipt.svelte';
   import {
     estimatedColumnPx,
     estimateRowSize,
@@ -1296,6 +1297,18 @@
   {atLatest}
   onRead={manualReceipts ? heldReceipt.hold : markRead}
 />
+{#if manualReceipts}
+  <HoldVisibleReceipt
+    {timeline}
+    {atLatest}
+    enabled={revealed &&
+      page.state.settings === undefined &&
+      !appLayout.drawerCovers(page.state) &&
+      !markingRead &&
+      !timeline.resumingLive}
+    onHold={heldReceipt.hold}
+  />
+{/if}
 <TimelineAnnouncements {timeline} {visibleItems} atLiveEdge={atLatest} />
 <MessageContextMenu menu={messageMenu} />
 <MessageDialogHost

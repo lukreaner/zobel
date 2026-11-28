@@ -202,3 +202,36 @@ test('a thread waits for its own "Seen"', async ({ page, app, homeserver, freshL
   await expect.poll(() => readEvents(writer, roomId, reader.userId)).toContain(replyEventId);
   await expect(seenButton(thread)).toBeHidden();
 });
+
+test('a chat opened without window focus, as from a notification on Android, shows "Seen"', async ({
+  page,
+  app,
+  homeserver,
+  freshLogin,
+}) => {
+  const reader = await freshLogin();
+  const { writer, roomId } = await chatWith(
+    homeserver.baseUrl,
+    reader,
+    `unfocused-${String(Date.now())}`
+  );
+  await page.goto('/settings/privacy');
+  const setting = page.getByRole('switch', { name: 'Mark chats as read by hand', exact: true });
+  await expect(setting).toBeVisible({ timeout: COLD_BOOT_TIMEOUT });
+  await setting.click();
+  await expect(setting).toBeChecked();
+  const notifiedEventId = await writer.sendMessage(roomId, 'Notified message');
+
+  // A chat opened from an Android notification has no focus until the first touch.
+  await page.addInitScript(() => {
+    document.hasFocus = () => false;
+  });
+  await app.openPermalink(roomId, notifiedEventId);
+  await expect(page.getByText('Notified message', { exact: true })).toBeVisible({
+    timeout: COLD_BOOT_TIMEOUT,
+  });
+
+  await expect(seenButton(page)).toBeVisible();
+  await seenButton(page).click();
+  await expect.poll(() => readUpTo(writer, roomId, reader.userId)).toBe(notifiedEventId);
+});
