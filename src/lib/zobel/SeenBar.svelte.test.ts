@@ -94,6 +94,7 @@ test('a thread shows the button when the thread itself has unread replies', asyn
   core.rpc.timeline.unreadDiagnostics.mockResolvedValue({
     main: { unread: 0, notifying: 0, highlight: 0, receipt_event_id: null },
     server_notifications: 0,
+    unthreaded_receipt_timestamp: null,
     server_highlights: 0,
     threads: [
       { root_event_id: '$root', unread: 2, notifying: 0, highlight: 0, receipt_event_id: null },
@@ -121,6 +122,7 @@ test('a thread that is read has no button, even in an unread room', async () => 
   core.rpc.timeline.unreadDiagnostics.mockResolvedValue({
     main: { unread: 3, notifying: 0, highlight: 0, receipt_event_id: null },
     server_notifications: 0,
+    unthreaded_receipt_timestamp: null,
     server_highlights: 0,
     threads: [
       { root_event_id: '$root', unread: 0, notifying: 0, highlight: 0, receipt_event_id: '$reply' },
