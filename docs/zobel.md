@@ -84,6 +84,7 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `plugins/tauri-plugin-sable-push/android/src/main/java/moe/sable/push/PushNotifier.kt` | A notification for a chat named after its sender is shown as a direct chat (test in `PushNotifierTest.kt`)                                                                                 |
 | `src/lib/features/settings/AppIconSettings.svelte`                                     | Adds Zobel's icons to the app icon picker: previews, names and order from `src/lib/zobel/app-icons.ts`                                                                                     |
 | `src-tauri/gen/android/app/src/main/AndroidManifest.xml`                               | One launcher alias per Zobel icon, before Sable's (written by `scripts/zobel/app-icons.mjs`)                                                                                               |
+| `src/lib/features/search/SearchView.svelte`                                            | Calls `focusSearchWhenOpened` (`src/lib/zobel/search-focus.ts`)                                                                                                                            |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -175,6 +176,11 @@ in the table above.
   centre) into `src/lib/zobel/app-icons`, list it in `icons.json` with an ID starting `zobel_`, and
   name it under `zobel.appIcons` in `src/lib/zobel/locales`. iOS is left out: Zobel builds no iOS
   app.
+
+- **Search opens with the keyboard.** Sable focuses the message search field only in the wide
+  layout. `src/lib/zobel/search-focus.ts` focuses it on narrow screens too when search was opened
+  by tapping a link, such as the search button in the chat list, so the keyboard comes up with it;
+  coming back to search leaves it closed. Test: `tests/e2e/zobel-search-focus.spec.ts`.
 
 ## End-to-end tests without Docker
 
