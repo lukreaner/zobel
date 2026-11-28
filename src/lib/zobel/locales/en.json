@@ -18,7 +18,7 @@
     "chatLookHint": "“Messenger” arranges Zobel like Signal or Beeper: one list of chats with the last message and its time, a menu above it in place of the bar of spaces, and messages in bubbles with yours on the right. Choosing it also switches the message layout to bubbles and turns on message previews; both can be changed again on their own.",
     "chatLookTerms": "layout, design, Signal, Beeper, WhatsApp, Discord, messenger, bubbles, chat list",
     "chatLookSable": "Sable",
-    "chatLookMessenger": "Messenger (like Signal and Beeper)",
+    "chatLookMessenger": "Messenger",
     "sections": "Lists",
     "sectionMenu": "Switch list",
     "createOrJoin": "Create or join"

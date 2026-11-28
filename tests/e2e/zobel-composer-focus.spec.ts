@@ -50,7 +50,9 @@ async function openFromList(page: Page, roomId: string, tap: boolean): Promise<v
   await expect(row).toBeVisible({ timeout: COLD_BOOT_TIMEOUT });
   if (tap) await row.tap();
   else await row.click();
-  await expect(page.getByText('Hello', { exact: true })).toBeVisible({ timeout: COLD_BOOT_TIMEOUT });
+  await expect(page.getByText('Hello', { exact: true })).toBeVisible({
+    timeout: COLD_BOOT_TIMEOUT,
+  });
   await expect(page.locator('[data-focus-region="composer"]')).toBeVisible();
 }
 

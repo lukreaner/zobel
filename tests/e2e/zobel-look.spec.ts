@@ -61,7 +61,7 @@ test('the messenger look puts a list menu, times and bubbles in place', async ({
 }) => {
   const me = await freshLogin();
   const roomId = await directChat(homeserver.baseUrl, me, 'Andrea');
-  await chooseLook(page, 'Messenger (like Signal and Beeper)');
+  await chooseLook(page, 'Messenger');
 
   await page.goto(`/direct/${encodeURIComponent(roomId)}`);
   const own = page.locator('.message.own').filter({ hasText: 'Bin an der Treppe' });

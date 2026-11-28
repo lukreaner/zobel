@@ -79,7 +79,6 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/features/sidebar/RoomNav.svelte`                                              | Shows the time of the last message in the messenger look                                                                                                                                   |
 | `src/lib/features/sidebar/RoomNav.svelte`                                              | On touch screens in the split view a chat opened from the list replaces the open one in the history (`src/lib/zobel/room-history.svelte.ts`, test: `tests/e2e/zobel-back-to-list.spec.ts`) |
 | `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list Zobel's settings                                                                                                                                                      |
-| `static/config.json`                                                                   | `settingsDefaults.reuploadGifs`: GIFs from the picker are uploaded instead of linked to Sable's GIF proxy (test: `tests/e2e/zobel-gif.spec.ts`)                                            |
 | `vendor/wry/src/android/kotlin/RustWebView.kt`                                         | Hands the keyboard's input connection to `ZobelKeyboardImages` (also listed in `vendor/wry/UPSTREAM.md`)                                                                                   |
 | `src-tauri/gen/android/app/src/main/java/moe/sable/client/ZobelKeyboardImages.kt`      | Zobel's own file: tells keyboards the app takes GIFs and images and passes them to the page                                                                                                |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
@@ -140,7 +139,7 @@ in the table above.
   only take text, so Gboard greys out its GIFs. `ZobelKeyboardImages.kt` declares the image types
   and hands an inserted image to the page as the `zobel-keyboard-image` event;
   `src/lib/zobel/keyboard-images.ts` pastes it into the focused field, and the message field
-  attaches it like any pasted image. Test: `tests/e2e/zobel-gif.spec.ts` (the page side; the
+  attaches it like any pasted image. Test: `tests/e2e/zobel-keyboard-images.spec.ts` (the page side; the
   Kotlin side is only built by the release workflow).
 
 ## End-to-end tests without Docker
