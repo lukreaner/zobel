@@ -125,7 +125,8 @@ in the table above.
   going back to Sable's look resets whichever of them nobody changed since. In place of the
   bar of spaces, `src/lib/zobel/SectionSwitcher.svelte` turns the list's title into a menu of all
   lists, and `src/lib/zobel/RoomRowTime.svelte` adds the time to each chat row. With the setting
-  `chatLookMenu` on `bottom`, that menu floats at the bottom of the list instead
+  `chatLookMenu` on `bottom`, that menu floats at the bottom of the list instead, next to a button for message search,
+  which then leaves the list
   (`data-zobel-list-menu` on `<html>`).
 
   After a merge from Sable has touched the room list, the timeline or the message field, run

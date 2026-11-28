@@ -136,6 +136,11 @@ html[data-zobel-list-menu='bottom'] .desktop-navigation-main {
   position: relative;
 }
 
+/* Message search moves from the list into the floating bar. */
+html[data-zobel-list-menu='bottom'] .room-nav-actions .nav-action[href^='/search'] {
+  display: none;
+}
+
 html[data-zobel-list-menu='bottom'] .room-nav-content {
   padding-bottom: calc(var(--space-800) + 2 * var(--space-400));
 }

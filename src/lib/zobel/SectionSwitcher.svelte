@@ -5,6 +5,7 @@
   import HashIcon from 'phosphor-svelte/lib/HashIcon';
   import HouseIcon from 'phosphor-svelte/lib/HouseIcon';
   import LinkIcon from 'phosphor-svelte/lib/LinkIcon';
+  import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import type { Component } from 'svelte';
   import { goto } from '$app/navigation';
@@ -105,6 +106,15 @@
   );
   let CurrentIcon = $derived(current?.icon);
   let shownTitle = $derived(title ?? current?.label ?? i18n.t('zobel.sections'));
+  /** Message search, within the space when a space's list is open, as the list's own entry does. */
+  let searchHref = $derived.by(() => {
+    const space = current?.space;
+    const search = resolve('/(app)/search');
+    if (!space) return search;
+    const label = space.canonical_alias ?? space.name ?? space.room_id;
+    const scope = label.includes(' ') ? `"${label}"` : label;
+    return `${search}?q=${encodeURIComponent(`space:${scope} `)}&space=${encodeURIComponent(space.room_id)}`;
+  });
   let shownSpace = $derived(activeSpace === undefined ? (current?.space ?? null) : activeSpace);
 
   const createEntries = [
@@ -145,53 +155,74 @@
   </ActionMenuItem>
 {/snippet}
 
-<ActionMenu
-  label={i18n.t('zobel.sectionMenu')}
-  side={floating ? 'top' : 'bottom'}
-  align={floating ? 'center' : 'start'}
->
-  {#snippet trigger({ props })}
-    <button
-      {...props}
-      type="button"
-      class={['zobel-section-switcher selection-open', { floating }]}
-    >
-      {#if shownSpace}
-        <Avatar
-          id={shownSpace.room_id}
-          src={shownSpace.display_avatar_url}
-          name={shownTitle}
-          size="small"
-        />
-      {:else if CurrentIcon}
-        <CurrentIcon class="zobel-section-icon" />
-      {/if}
-      <span class="zobel-section-title">{shownTitle}</span>
-      <CaretDownIcon class="zobel-section-caret" />
-    </button>
-  {/snippet}
-  {#each sections as entry (entry.href)}
-    {@render entryItem(entry)}
-  {/each}
-  {#if spaces.length > 0}
-    <ActionMenuSeparator />
-    {#each spaces as entry (entry.href)}
+{#snippet menu()}
+  <ActionMenu
+    label={i18n.t('zobel.sectionMenu')}
+    side={floating ? 'top' : 'bottom'}
+    align={floating ? 'center' : 'start'}
+  >
+    {#snippet trigger({ props })}
+      <button
+        {...props}
+        type="button"
+        class={['zobel-section-switcher selection-open', { floating }]}
+      >
+        {#if shownSpace}
+          <Avatar
+            id={shownSpace.room_id}
+            src={shownSpace.display_avatar_url}
+            name={shownTitle}
+            size="small"
+          />
+        {:else if CurrentIcon}
+          <CurrentIcon class="zobel-section-icon" />
+        {/if}
+        <span class="zobel-section-title">{shownTitle}</span>
+        <CaretDownIcon class="zobel-section-caret" />
+      </button>
+    {/snippet}
+    {#each sections as entry (entry.href)}
       {@render entryItem(entry)}
     {/each}
-  {/if}
-  <ActionMenuSeparator />
-  {#each createEntries as entry (entry.label)}
-    <ActionMenuItem
-      onSelect={() => {
-        if (entry.href === null) openFindOrJoin();
-        else navigate(entry.href);
-      }}
+    {#if spaces.length > 0}
+      <ActionMenuSeparator />
+      {#each spaces as entry (entry.href)}
+        {@render entryItem(entry)}
+      {/each}
+    {/if}
+    <ActionMenuSeparator />
+    {#each createEntries as entry (entry.label)}
+      <ActionMenuItem
+        onSelect={() => {
+          if (entry.href === null) openFindOrJoin();
+          else navigate(entry.href);
+        }}
+      >
+        <entry.icon />
+        {i18n.t(entry.label)}
+      </ActionMenuItem>
+    {/each}
+  </ActionMenu>
+{/snippet}
+
+{#if floating}
+  <div class="zobel-floating-bar">
+    {@render menu()}
+    <!-- eslint-disable svelte/no-navigation-without-resolve -- searchHref is built with resolve() -->
+    <a
+      class="zobel-floating-search selection-open"
+      href={searchHref}
+      aria-label={i18n.t('nav.messageSearch')}
+      draggable="false"
+      onclick={() => onNavigate?.(searchHref)}
     >
-      <entry.icon />
-      {i18n.t(entry.label)}
-    </ActionMenuItem>
-  {/each}
-</ActionMenu>
+      <MagnifyingGlassIcon />
+    </a>
+    <!-- eslint-enable svelte/no-navigation-without-resolve -->
+  </div>
+{:else}
+  {@render menu()}
+{/if}
 
 <style>
   .zobel-section-switcher {
@@ -210,21 +241,59 @@
     padding: 0 var(--space-300) 0 var(--space-200);
   }
 
-  .zobel-section-switcher.floating {
-    background: var(--surface-container);
-    border: var(--border-width) solid var(--surface-container-line);
+  .zobel-floating-bar {
+    align-items: center;
     bottom: var(--space-400);
-    box-shadow: 0 var(--space-100) var(--space-400) rgb(0 0 0 / 30%);
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-600);
+    display: flex;
+    gap: var(--space-200);
     inset-inline: 0;
     margin-inline: auto;
     max-width: calc(100% - 2 * var(--space-400));
-    min-height: 3rem;
-    padding-inline: var(--space-400);
+    pointer-events: none;
     position: absolute;
     width: fit-content;
     z-index: 2;
+  }
+
+  .zobel-section-switcher.floating,
+  .zobel-floating-search {
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--surface-container-line);
+    box-shadow: 0 var(--space-100) var(--space-400) rgb(0 0 0 / 30%);
+    min-height: var(--space-800);
+    pointer-events: auto;
+  }
+
+  .zobel-section-switcher.floating {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-600);
+    margin: 0;
+    min-width: 0;
+    padding-inline: var(--space-400);
+  }
+
+  .zobel-floating-search {
+    align-items: center;
+    border-radius: 50%;
+    color: inherit;
+    display: flex;
+    flex: none;
+    justify-content: center;
+    width: var(--space-800);
+  }
+
+  .zobel-floating-search :global(svg) {
+    height: var(--icon-size-small);
+    width: var(--icon-size-small);
+  }
+
+  .zobel-floating-search:hover {
+    background: var(--surface-container-hover);
+  }
+
+  .zobel-floating-search:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
   }
 
   .zobel-section-switcher.floating:hover,

@@ -114,10 +114,19 @@ test('the messenger look puts a list menu, times and bubbles in place', async ({
   await expect(page.locator('.room-nav-header .zobel-section-switcher')).toHaveCount(0);
   const box = await floating.boundingBox();
   expect(box && box.y > 800 / 2).toBe(true);
+  // Message search moves from the list into the floating bar.
+  await expect(
+    page.locator('.room-nav-actions').getByRole('link', { name: 'Message search' })
+  ).toBeHidden();
+  const search = page.locator('.zobel-floating-bar').getByRole('link', { name: 'Message search' });
+  await expect(search).toBeVisible();
   await shot(page, 'messenger-phone-floating');
   await floating.click();
   await expect(page.getByRole('menuitemradio', { name: /Rooms outside spaces/ })).toBeVisible();
   await shot(page, 'messenger-phone-floating-menu');
+  await page.keyboard.press('Escape');
+  await search.click();
+  await expect(page).toHaveURL(/\/search/);
 });
 
 test("Sable's look keeps the bar of spaces", async ({ page, app, homeserver, freshLogin }) => {
