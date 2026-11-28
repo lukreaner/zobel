@@ -18,3 +18,9 @@ A re-vendor has to carry these and the local patches below as well as #1856.
   (src/android/kotlin/WryActivity.kt, RustWebChromeClient.kt).
 - On Android, a video capture or file picker that reports success without returning data
   counts as cancelled instead of crashing (src/android/kotlin/RustWebChromeClient.kt).
+
+## Zobel's patch
+
+- `RustWebView.onCreateInputConnection` hands the connection to Zobel's `ZobelKeyboardImages`
+  (in `src-tauri/gen/android/app/src/main/java/moe/sable/client`), so keyboards can insert GIFs
+  and images (src/android/kotlin/RustWebView.kt). A re-vendor has to carry it too.

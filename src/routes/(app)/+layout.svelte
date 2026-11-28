@@ -107,6 +107,7 @@
   } from '#lib/settings/sync-documents.js';
   import { manualReadReceiptsDocument } from '#lib/zobel/manual-read-receipts.svelte.js';
   import { trackChatLook } from '#lib/zobel/chat-look.svelte.js';
+  import { listenForKeyboardImages } from '#lib/zobel/keyboard-images.js';
   import {
     registerNativePush,
     retryNativePushNow,
@@ -414,6 +415,7 @@
   });
 
   trackChatLook();
+  $effect(listenForKeyboardImages);
 
   const syncDocuments = $derived([
     settingsDocument,

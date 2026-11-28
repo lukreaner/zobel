@@ -67,7 +67,7 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/features/room/timeline/TimelineList.svelte`                                   | Hands read receipts to the "Seen" button when it is on                                                                                                                                     |
 | `src/lib/features/forum/ForumPage.svelte`                                              | The same for forum rooms                                                                                                                                                                   |
 | `src/lib/features/room/settings/RoomGeneralSettings.svelte`                            | Shows the per-chat choice for "Seen"                                                                                                                                                       |
-| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices and marks the page with the look                                                                                                                                |
+| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices, marks the page with the look and listens for keyboard images                                                                                                   |
 | `src/lib/ui/breakpoints.ts`, `src/lib/ui/media.css`, `src/lib/ui/app-layout.svelte.ts` | Touch screens from 37rem wide get the split view (foldables in portrait), also while the keyboard is open                                                                                  |
 | `src/lib/ui/breakpoints.test.ts`                                                       | Expects that breakpoint in the CSS                                                                                                                                                         |
 | `src/lib/settings/definitions.ts`                                                      | Also adds the settings `chatLook` and `focusComposerOnOpen`                                                                                                                                |
@@ -80,6 +80,8 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/features/sidebar/RoomNav.svelte`                                              | On touch screens in the split view a chat opened from the list replaces the open one in the history (`src/lib/zobel/room-history.svelte.ts`, test: `tests/e2e/zobel-back-to-list.spec.ts`) |
 | `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list Zobel's settings                                                                                                                                                      |
 | `static/config.json`                                                                   | `settingsDefaults.reuploadGifs`: GIFs from the picker are uploaded instead of linked to Sable's GIF proxy (test: `tests/e2e/zobel-gif.spec.ts`)                                            |
+| `vendor/wry/src/android/kotlin/RustWebView.kt`                                         | Hands the keyboard's input connection to `ZobelKeyboardImages` (also listed in `vendor/wry/UPSTREAM.md`)                                                                                   |
+| `src-tauri/gen/android/app/src/main/java/moe/sable/client/ZobelKeyboardImages.kt`      | Zobel's own file: tells keyboards the app takes GIFs and images and passes them to the page                                                                                                |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -133,6 +135,13 @@ in the table above.
   The setting `focusComposerOnOpen` (Composer) is `auto` by default: only where the main pointer
   is not a finger (`src/lib/zobel/composer-focus.ts`). Tests: `src/lib/zobel/composer-focus.test.ts`
   and `tests/e2e/zobel-composer-focus.spec.ts`.
+
+- **GIFs and images from the keyboard (Android).** The WebView tells keyboards that text fields
+  only take text, so Gboard greys out its GIFs. `ZobelKeyboardImages.kt` declares the image types
+  and hands an inserted image to the page as the `zobel-keyboard-image` event;
+  `src/lib/zobel/keyboard-images.ts` pastes it into the focused field, and the message field
+  attaches it like any pasted image. Test: `tests/e2e/zobel-gif.spec.ts` (the page side; the
+  Kotlin side is only built by the release workflow).
 
 ## End-to-end tests without Docker
 

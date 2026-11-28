@@ -59,3 +59,35 @@ test('a GIF from the picker is uploaded to your homeserver', async ({ page, app,
     )
     .toMatch(/^mxc:\/\/test\.local\//);
 });
+
+test('a GIF inserted from the keyboard is sent as an image', async ({ page, app, freshLogin }) => {
+  const me = await freshLogin();
+  const roomId = await me.createRoom({ name: `Keyboard GIF ${String(Date.now())}` });
+  await app.openRoom(roomId);
+  await app.composer.click({ timeout: COLD_BOOT_TIMEOUT });
+
+  // What ZobelKeyboardImages.kt hands to the page when Gboard inserts a GIF.
+  await page.evaluate((data) => {
+    window.dispatchEvent(
+      new CustomEvent('zobel-keyboard-image', {
+        detail: { mime: 'image/gif', name: 'gboard.gif', data },
+      })
+    );
+  }, GIF.toString('base64'));
+  await expect(page.getByRole('button', { name: 'Remove gboard.gif' })).toBeVisible();
+  await app.composer.press('Enter');
+
+  await expect
+    .poll(
+      async () => {
+        const messages = await me.request<Messages>(
+          'GET',
+          `client/v3/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=10`
+        );
+        const sent = messages.chunk.find((event) => event.type === 'm.room.message');
+        return sent ? `${sent.content.msgtype ?? ''} ${sent.content.url ?? ''}` : null;
+      },
+      { timeout: 30_000 }
+    )
+    .toMatch(/^m\.image mxc:\/\/test\.local\//);
+});
