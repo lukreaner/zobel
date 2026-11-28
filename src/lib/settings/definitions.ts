@@ -311,6 +311,7 @@ const SETTINGS = {
   messagePreviews: choice<MessagePreviews>(['off', 'direct', 'rooms', 'all'], 'off', {
     account: true,
   }),
+  chatListStatus: toggle(false, { account: true }),
   roomBannerHeight: range(56, 500, 190, { account: true, device: true }),
   subspaceHierarchyLimit: choice(SUBSPACE_DEPTHS, '3', { account: true }),
   searchIndexLimit: choice(SEARCH_INDEX_LIMITS, '512', { device: true }),

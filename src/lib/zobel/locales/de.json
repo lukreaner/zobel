@@ -25,6 +25,11 @@
     "chatLookMenu": "Listenmenü",
     "chatLookMenuHint": "Wo das Menü zum Wechseln der Liste sitzt.",
     "chatLookMenuTop": "Oben",
-    "chatLookMenuBottom": "Schwebend unten"
+    "chatLookMenuBottom": "Schwebend unten",
+    "chatListStatus": "Anzeigen, ob deine letzte Nachricht gesendet ist",
+    "chatListStatusHint": "In der Chatliste steht vor deiner letzten Nachricht eine Uhr, solange sie noch gesendet wird, und ein Haken, sobald sie gesendet ist. Erscheint dort, wo Nachrichtenvorschauen an sind.",
+    "chatListStatusTerms": "Status, gesendet, wird gesendet, Haken, Häkchen, Zustellung, Chatliste, Nachrichtenvorschau",
+    "messageSending": "Wird gesendet",
+    "messageSent": "Gesendet"
   }
 }

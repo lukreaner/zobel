@@ -360,6 +360,11 @@
           ],
           "default": "off"
         },
+        "chatListStatus": {
+          "title": "Show whether your last message was sent",
+          "type": "boolean",
+          "default": false
+        },
         "roomBannerHeight": {
           "type": "number",
           "minimum": 56,
@@ -1277,6 +1282,11 @@
             "all"
           ],
           "default": "off"
+        },
+        "chatListStatus": {
+          "title": "Show whether your last message was sent",
+          "type": "boolean",
+          "default": false
         },
         "roomBannerHeight": {
           "type": "number",

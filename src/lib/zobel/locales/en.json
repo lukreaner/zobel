@@ -25,6 +25,11 @@
     "chatLookMenu": "List menu",
     "chatLookMenuHint": "Where the menu for switching lists sits.",
     "chatLookMenuTop": "At the top",
-    "chatLookMenuBottom": "Floating at the bottom"
+    "chatLookMenuBottom": "Floating at the bottom",
+    "chatListStatus": "Show whether your last message was sent",
+    "chatListStatusHint": "In the chat list, a clock in front of your last message means it is still being sent, a tick that it has been sent. Shown where message previews are on.",
+    "chatListStatusTerms": "status, sent, sending, tick, check mark, delivery, chat list, message preview",
+    "messageSending": "Sending",
+    "messageSent": "Sent"
   }
 }

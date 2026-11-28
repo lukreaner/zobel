@@ -1,5 +1,6 @@
 import BridgeIcon from 'phosphor-svelte/lib/BridgeIcon';
 import CalendarBlankIcon from 'phosphor-svelte/lib/CalendarBlankIcon';
+import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
 import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
 import ChatsCircleIcon from 'phosphor-svelte/lib/ChatsCircleIcon';
 import ClockIcon from 'phosphor-svelte/lib/ClockIcon';
@@ -63,6 +64,15 @@ export const sidebarCategory: SettingsCategory = {
         { value: 'rooms', label: 'settings.messagePreviewsRooms' },
         { value: 'all', label: 'settings.messagePreviewsAll' },
       ],
+    },
+    {
+      key: 'chatListStatus',
+      section: 'sidebar',
+      icon: CheckIcon,
+      name: 'zobel.chatListStatus',
+      description: 'zobel.chatListStatusHint',
+      terms: ['zobel.chatListStatusTerms'],
+      type: 'boolean',
     },
     {
       key: 'showDmTopics',

@@ -17,6 +17,7 @@
   import CalendarRowEvent from '#lib/features/calendar/CalendarRowEvent.svelte';
   import Tooltip from '#lib/ui/primitives/Tooltip.svelte';
   import { i18n } from '#lib/i18n.js';
+  import RowMessageStatus from '#lib/zobel/RowMessageStatus.svelte';
 
   interface Props {
     name: string;
@@ -34,7 +35,7 @@
   <span class="room-name"><bdi>{name}</bdi></span>
   {#if preview}
     <span class="room-topic">
-      {#if preview.sender}
+      <RowMessageStatus {room} />{#if preview.sender}
         <strong class="room-preview-sender"
           >{i18n.t('nav.previewSender', { name: preview.sender })}</strong
         >

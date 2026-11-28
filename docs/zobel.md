@@ -82,6 +82,8 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `vendor/wry/src/android/kotlin/RustWebView.kt`                                         | Hands the keyboard's input connection to `ZobelKeyboardImages` (also listed in `vendor/wry/UPSTREAM.md`)                                                                                   |
 | `src-tauri/gen/android/app/src/main/java/moe/sable/client/ZobelKeyboardImages.kt`      | Zobel's own file: tells keyboards the app takes GIFs and images and passes them to the page                                                                                                |
 | `plugins/tauri-plugin-sable-push/android/src/main/java/moe/sable/push/PushNotifier.kt` | A notification for a chat named after its sender is shown as a direct chat (test in `PushNotifierTest.kt`)                                                                                 |
+| `src/lib/settings/definitions.ts`, `src/lib/settings/registry/sidebar.ts`              | Add the setting `chatListStatus` and list it under Sidebar, after message previews                                                                                                         |
+| `src/lib/features/sidebar/RoomRowText.svelte`                                          | Puts `src/lib/zobel/RowMessageStatus.svelte` in front of the message preview                                                                                                               |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -145,6 +147,14 @@ in the table above.
   `src/lib/zobel/keyboard-images.ts` pastes it into the focused field, and the message field
   attaches it like any pasted image. Test: `tests/e2e/zobel-keyboard-images.spec.ts` (the page side; the
   Kotlin side is only built by the release workflow).
+
+- **Status of your last message in the chat list.** With the setting `chatListStatus`
+  (Sidebar, off by default) `src/lib/zobel/RowMessageStatus.svelte` puts a clock in front of the
+  message preview while your last message is still being sent and a tick once it has been, from
+  the room list's `latest_event` (`own`, `sending`). Matrix has no "delivered" state. "Read" would
+  need the receipts of the other members, which Sable's core only reports for open timelines, so
+  it would take a change to the Rust core. Tests: `src/lib/zobel/RowMessageStatus.svelte.test.ts`
+  and `tests/e2e/zobel-list-status.spec.ts` (the clock only with `ZOBEL_E2E_HOMESERVER_PGID`).
 
 ## End-to-end tests without Docker
 
