@@ -158,6 +158,166 @@
         </activity-alias>
 
         <activity-alias
+            android:name=".AppIconZobelClassic"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_classic"
+            android:roundIcon="@mipmap/ic_launcher_zobel_classic"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_classic" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelNight"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_night"
+            android:roundIcon="@mipmap/ic_launcher_zobel_night"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_night" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelSnow"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_snow"
+            android:roundIcon="@mipmap/ic_launcher_zobel_snow"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_snow" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelForest"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_forest"
+            android:roundIcon="@mipmap/ic_launcher_zobel_forest"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_forest" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelSunset"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_sunset"
+            android:roundIcon="@mipmap/ic_launcher_zobel_sunset"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_sunset" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelNeon"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_neon"
+            android:roundIcon="@mipmap/ic_launcher_zobel_neon"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_neon" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelChat"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_chat"
+            android:roundIcon="@mipmap/ic_launcher_zobel_chat"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_chat" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIconZobelPixel"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_zobel_pixel"
+            android:roundIcon="@mipmap/ic_launcher_zobel_pixel"
+            android:enabled="false"
+            android:exported="true">
+            <meta-data
+                android:name="tauri-plugin-app-icon-id"
+                android:value="zobel_pixel" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
             android:name=".AppIconPropeller"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_propeller"

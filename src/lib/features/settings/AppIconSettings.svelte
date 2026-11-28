@@ -22,8 +22,14 @@
   import palestine from '#lib/supporter/app-icons/palestine.svg';
   import cuba from '#lib/supporter/app-icons/cuba.svg';
   import '#lib/ui/primitives/settings-row.css';
+  import {
+    ZOBEL_APP_ICON_PREVIEWS,
+    zobelAppIconLabel,
+    zobelAppIconsFirst,
+  } from '#lib/zobel/app-icons.js';
 
   const previews: Record<string, string> = {
+    ...ZOBEL_APP_ICON_PREVIEWS,
     primary: defaultIcon,
     propeller,
     agender,
@@ -83,9 +89,10 @@
         bind:value={() => selected, (icon) => void select(icon)}
         disabled={changing}
         aria-label={i18n.t('settings.appIconTitle')}
-        items={[...new Set(['primary', ...icons])].map((icon) => ({
+        items={[...new Set(['primary', ...zobelAppIconsFirst(icons)])].map((icon) => ({
           value: icon,
-          label: i18n.t(`settings.appIcons.${icon}`, { defaultValue: icon }),
+          label:
+            zobelAppIconLabel(icon) ?? i18n.t(`settings.appIcons.${icon}`, { defaultValue: icon }),
           image: previews[icon],
           imageClass: android ? 'app-icon-image-android' : undefined,
         }))}

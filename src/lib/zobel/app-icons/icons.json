@@ -1,0 +1,12 @@
+{
+  "icons": [
+    { "id": "zobel_classic", "source": "classic.svg", "backgroundColor": "#F3B94F" },
+    { "id": "zobel_night", "source": "night.svg", "backgroundColor": "#16224A" },
+    { "id": "zobel_snow", "source": "snow.svg", "backgroundColor": "#A9D6F2" },
+    { "id": "zobel_forest", "source": "forest.svg", "backgroundColor": "#1F4A33" },
+    { "id": "zobel_sunset", "source": "sunset.svg", "backgroundColor": "#F0605F" },
+    { "id": "zobel_neon", "source": "neon.svg", "backgroundColor": "#0B0B16" },
+    { "id": "zobel_chat", "source": "chat.svg", "backgroundColor": "#17A38A" },
+    { "id": "zobel_pixel", "source": "pixel.svg", "backgroundColor": "#6FC3E8" }
+  ]
+}

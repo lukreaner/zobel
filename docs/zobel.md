@@ -82,6 +82,8 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `vendor/wry/src/android/kotlin/RustWebView.kt`                                         | Hands the keyboard's input connection to `ZobelKeyboardImages` (also listed in `vendor/wry/UPSTREAM.md`)                                                                                   |
 | `src-tauri/gen/android/app/src/main/java/moe/sable/client/ZobelKeyboardImages.kt`      | Zobel's own file: tells keyboards the app takes GIFs and images and passes them to the page                                                                                                |
 | `plugins/tauri-plugin-sable-push/android/src/main/java/moe/sable/push/PushNotifier.kt` | A notification for a chat named after its sender is shown as a direct chat (test in `PushNotifierTest.kt`)                                                                                 |
+| `src/lib/features/settings/AppIconSettings.svelte`                                     | Adds Zobel's icons to the app icon picker: previews, names and order from `src/lib/zobel/app-icons.ts`                                                                                     |
+| `src-tauri/gen/android/app/src/main/AndroidManifest.xml`                               | One launcher alias per Zobel icon, before Sable's (written by `scripts/zobel/app-icons.mjs`)                                                                                               |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -145,6 +147,26 @@ in the table above.
   `src/lib/zobel/keyboard-images.ts` pastes it into the focused field, and the message field
   attaches it like any pasted image. Test: `tests/e2e/zobel-keyboard-images.spec.ts` (the page side; the
   Kotlin side is only built by the release workflow).
+
+- **App icons of Zobel's own (Android).** Sable lets Android and iOS users pick another launcher
+  icon (Settings → Appearance → App icon) through `tauri-plugin-app-icon`: each icon is an
+  `activity-alias` in the manifest, and choosing one enables its alias. Zobel adds eight icons of
+  its own, listed in `src/lib/zobel/app-icons/icons.json` next to their SVG sources. The same SVGs
+  are the previews in the picker. [`scripts/zobel/app-icons.mjs`](../scripts/zobel/app-icons.mjs)
+  runs the plugin's generator for Zobel's icons only, so Sable's resources stay untouched, and
+  writes the manifest's aliases with Zobel's before Sable's:
+
+  ```sh
+  node scripts/zobel/app-icons.mjs   # then commit the manifest and the new files in res/mipmap-*
+  ```
+
+  Run it after changing Zobel's icons, and after a merge from Sable that rewrote the aliases
+  between `APP-ICON ALIASES START` and `END` (`node --test scripts/zobel/app-icons.test.mjs`, which
+  the release workflow runs, fails then). To add an icon, put its SVG (512×512, filling the square;
+  launchers cut off the corners, so keep the motif inside a circle of radius 205 around the
+  centre) into `src/lib/zobel/app-icons`, list it in `icons.json` with an ID starting `zobel_`, and
+  name it under `zobel.appIcons` in `src/lib/zobel/locales`. iOS is left out: Zobel builds no iOS
+  app.
 
 ## End-to-end tests without Docker
 
@@ -226,7 +248,7 @@ application ID alone, and renaming the rest would touch files Sable edits consta
 It is Sable's FOSS build: no Firebase Cloud Messaging inside the app, push through
 UnifiedPush as in Sable's FOSS APK. Firebase is only used to hand the APK to testers.
 
-Still Sable's: the icon, and the link schemes `moe.sable.next`, `sable` and `matrix`. With
+Still Sable's: the default icon (Zobel's own are offered as alternatives), and the link schemes `moe.sable.next`, `sable` and `matrix`. With
 both apps installed, Android asks which one opens such a link.
 
 ### What the workflow needs

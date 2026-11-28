@@ -25,6 +25,16 @@
     "chatLookMenu": "List menu",
     "chatLookMenuHint": "Where the menu for switching lists sits.",
     "chatLookMenuTop": "At the top",
-    "chatLookMenuBottom": "Floating at the bottom"
+    "chatLookMenuBottom": "Floating at the bottom",
+    "appIcons": {
+      "zobel_classic": "Zobel",
+      "zobel_night": "Zobel at night",
+      "zobel_snow": "Snow",
+      "zobel_forest": "Forest",
+      "zobel_sunset": "Sunset",
+      "zobel_neon": "Neon",
+      "zobel_chat": "Speech bubble",
+      "zobel_pixel": "Pixel"
+    }
   }
 }
