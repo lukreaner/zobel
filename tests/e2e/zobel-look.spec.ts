@@ -72,10 +72,22 @@ test('the messenger look puts a list menu, times and bubbles in place', async ({
   const switcher = page.getByRole('button', { name: 'Direct messages' });
   await expect(switcher).toBeVisible();
 
+  // A theme that caps rows at Sable's height, as Win95 and others in Sable's catalogue do,
+  // does not squeeze the taller rows into each other.
+  await page.addStyleTag({
+    content:
+      'body :is(.room-row-wrap, [data-a] [data-b]) { max-height: 37px !important; height: 37px !important; }',
+  });
+
   // Each chat shows when its last message came.
   const row = page.locator(`.room-row-wrap a[href="/direct/${encodeURIComponent(roomId)}"]`);
   await expect(row.locator('.zobel-row-time')).toBeVisible();
   await expect(row).toContainText('Bin an der Treppe');
+  const rowBox = await page
+    .locator('.room-row-wrap')
+    .filter({ has: page.locator(`a[href="/direct/${encodeURIComponent(roomId)}"]`) })
+    .boundingBox();
+  expect(rowBox && rowBox.height >= 60).toBe(true);
 
   // Your own messages sit on the right, the other person's on the left without their name.
   const theirs = page.locator('.message').filter({ hasText: 'Es tickt immer weiter hoch' });

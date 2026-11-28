@@ -35,6 +35,13 @@ html[data-zobel-look='messenger'] .room-nav-header h2 {
 
 html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row-wrap:not(.thread-row) {
   border-radius: var(--radius-outer);
+
+  /* Some themes (Win95, Mac OS 9, the cyberpunk ones) cap rows at Sable's height with
+     !important, which made the taller rows here overlap; only that is undone. */
+  /* stylelint-disable declaration-no-important -- the themes' own !important needs one to undo */
+  height: auto !important;
+  max-height: none !important;
+  /* stylelint-enable declaration-no-important */
 }
 
 html[data-zobel-look='messenger']
