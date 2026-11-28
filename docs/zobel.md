@@ -82,6 +82,7 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `vendor/wry/src/android/kotlin/RustWebView.kt`                                         | Hands the keyboard's input connection to `ZobelKeyboardImages` (also listed in `vendor/wry/UPSTREAM.md`)                                                                                   |
 | `src-tauri/gen/android/app/src/main/java/moe/sable/client/ZobelKeyboardImages.kt`      | Zobel's own file: tells keyboards the app takes GIFs and images and passes them to the page                                                                                                |
 | `plugins/tauri-plugin-sable-push/android/src/main/java/moe/sable/push/PushNotifier.kt` | A notification for a chat named after its sender is shown as a direct chat (test in `PushNotifierTest.kt`)                                                                                 |
+| `src/lib/features/search/SearchView.svelte`                                            | Calls `focusSearchWhenOpened` (`src/lib/zobel/search-focus.ts`)                                                                                                                            |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -145,6 +146,11 @@ in the table above.
   `src/lib/zobel/keyboard-images.ts` pastes it into the focused field, and the message field
   attaches it like any pasted image. Test: `tests/e2e/zobel-keyboard-images.spec.ts` (the page side; the
   Kotlin side is only built by the release workflow).
+
+- **Search opens with the keyboard.** Sable focuses the message search field only in the wide
+  layout. `src/lib/zobel/search-focus.ts` focuses it on narrow screens too when search was opened
+  by tapping a link, such as the search button in the chat list, so the keyboard comes up with it;
+  coming back to search leaves it closed. Test: `tests/e2e/zobel-search-focus.spec.ts`.
 
 ## End-to-end tests without Docker
 

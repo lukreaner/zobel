@@ -46,6 +46,7 @@
   import SearchRetryAlert from './SearchRetryAlert.svelte';
   import SearchStarter from './SearchStarter.svelte';
   import { SenderDirectory, type SenderIdentity } from './sender-directory.svelte.js';
+  import { focusSearchWhenOpened } from '#lib/zobel/search-focus.js';
 
   interface Props {
     panel?: boolean;
@@ -146,6 +147,7 @@
   let suggestionHighlighted = $derived(showingRecent || enterAccepts(search.query, navigated));
   let input = $state<HTMLInputElement>();
   let results = $state<HTMLElement>();
+  focusSearchWhenOpened(() => input);
 
   let phrases = $derived(search.parsed.phrases);
 
