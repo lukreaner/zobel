@@ -23,8 +23,8 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation((command) => {
     // The plugin lists the icons sorted by ID.
     if (command === 'plugin:app-icon|get_available_icons')
-      return Promise.resolve(['pride', 'propeller', 'zobel_lineart', 'zobel_sticker']);
-    if (command === 'plugin:app-icon|get_current_icon') return Promise.resolve('zobel_sticker');
+      return Promise.resolve(['pride', 'propeller', 'zobel_lineart', 'zobel_papercut']);
+    if (command === 'plugin:app-icon|get_current_icon') return Promise.resolve('zobel_papercut');
     return Promise.resolve(undefined);
   });
 });
@@ -38,9 +38,15 @@ test('Zobel has eight icons, each with a preview and a name', () => {
   expect(zobelAppIconLabel('pride')).toBeUndefined();
 });
 
+test("the default icon's preview is Zobel's main icon, and Sable's own is offered as Sable", () => {
+  expect(ZOBEL_APP_ICON_PREVIEWS.primary).toMatch(/sticker/);
+  expect(ZOBEL_APP_ICON_PREVIEWS.zobel_sable).toMatch(/default/);
+  expect(zobelAppIconLabel('zobel_sable')).toBe('Sable');
+});
+
 test("Zobel's icons come first, in their own order", () => {
-  expect(zobelAppIconsFirst(['cuba', 'zobel_pixel', 'pride', 'zobel_sticker'])).toEqual([
-    'zobel_sticker',
+  expect(zobelAppIconsFirst(['cuba', 'zobel_pixel', 'pride', 'zobel_papercut'])).toEqual([
+    'zobel_papercut',
     'zobel_pixel',
     'cuba',
     'pride',
@@ -50,7 +56,7 @@ test("Zobel's icons come first, in their own order", () => {
 test("the app icon picker offers Zobel's icons after the default, with pictures and names", async () => {
   render(AppIconSettings);
   const trigger = await screen.findByRole('combobox', { name: 'App icon' });
-  expect(trigger).toHaveTextContent('Sticker');
+  expect(trigger).toHaveTextContent('Paper cut');
 
   await userEvent.setup().click(trigger);
   await vi.waitFor(() => {
@@ -59,7 +65,7 @@ test("the app icon picker offers Zobel's icons after the default, with pictures 
   const choices = screen.getAllByRole('option');
   expect(choices.map((choice) => choice.textContent.trim())).toEqual([
     'Default',
-    'Sticker',
+    'Paper cut',
     'Line art',
     'Pride',
     'Propeller',

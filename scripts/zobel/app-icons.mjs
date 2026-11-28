@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Adds Zobel's launcher icons (src/lib/zobel/app-icons/icons.json) to the Android app, next to
-// Sable's (src-tauri/app-icons.json):
+// Sable's (src-tauri/app-icons.json), and writes Zobel's main icon to zobel/android/res:
 //
 //   node scripts/zobel/app-icons.mjs
 //
@@ -8,10 +8,21 @@
 // It uses the generator of tauri-plugin-app-icon, the plugin Sable switches icons with, at the
 // revision src-tauri/Cargo.toml pins. The generator writes the resources of Zobel's icons only,
 // so Sable's stay byte for byte as Sable committed them, and the manifest gets one launcher alias
-// per icon, Zobel's before Sable's. Commit what it changes. Run it again after changing Zobel's
+// per icon, Zobel's before Sable's. The main icon's resources are named like Sable's
+// (ic_launcher…); scripts/zobel/android/zobel.init.gradle lays them over Sable's when building
+// Zobel. Commit what it changes. Run it again after changing Zobel's
 // icons, or when a merge from Sable has rewritten the aliases in AndroidManifest.xml.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -63,10 +74,10 @@ const android = {
   resourcesDirectory: resolve(tauri, sable.android.resourcesDirectory),
   manifest: resolve(tauri, sable.android.manifest),
 };
-const zobelIcons = zobel.icons.map((icon) => ({
-  ...icon,
-  source: resolve(dirname(zobelConfigPath), icon.source),
-}));
+const fromConfig = (path) => resolve(dirname(zobelConfigPath), path);
+const zobelIcons = zobel.icons.map((icon) => ({ ...icon, source: fromConfig(icon.source) }));
+const mainIcon = { id: 'default', ...zobel.default, source: fromConfig(zobel.default.source) };
+const mainMonochrome = { id: 'default_monochrome', source: fromConfig(zobel.default.monochrome) };
 
 /**
  * Renders each SVG to a PNG with Chromium. `tauri icon` would render the SVGs itself with resvg,
@@ -80,6 +91,10 @@ async function renderWithChromium(icons, directory) {
     const page = await browser.newPage({ viewport: { width: 1024, height: 1024 } });
     const rendered = [];
     for (const icon of icons) {
+      if (!icon.source.endsWith('.svg')) {
+        rendered.push(icon);
+        continue;
+      }
       const png = join(directory, `${icon.id}.png`);
       const svg = readFileSync(icon.source, 'utf8').replace(
         '<svg ',
@@ -95,10 +110,64 @@ async function renderWithChromium(icons, directory) {
   }
 }
 
+const DENSITIES = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
+
+/** Writes Zobel's main icon as resources named like Sable's, for the release build to use. */
+function writeMainIcon(icon, monochrome, temporary) {
+  const out = join(root, 'zobel/android/res');
+  rmSync(out, { recursive: true, force: true });
+  const generate = (source, name) => {
+    const directory = join(temporary, name);
+    run('pnpm', ['tauri', 'icon', source, '--output', directory], { cwd: root });
+    return join(directory, 'android');
+  };
+  const main = generate(icon.source, 'main');
+  const mono = generate(monochrome.source, 'mono');
+  for (const density of DENSITIES) {
+    const target = join(out, `mipmap-${density}`);
+    mkdirSync(target, { recursive: true });
+    for (const name of ['ic_launcher', 'ic_launcher_round', 'ic_launcher_foreground']) {
+      cpSync(join(main, `mipmap-${density}`, `${name}.png`), join(target, `${name}.png`));
+    }
+    cpSync(
+      join(mono, `mipmap-${density}`, 'ic_launcher_foreground.png'),
+      join(target, 'ic_launcher_adaptive_foreground.png')
+    );
+  }
+  mkdirSync(join(out, 'mipmap-anydpi-v26'), { recursive: true });
+  writeFileSync(
+    join(out, 'mipmap-anydpi-v26', 'ic_launcher.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <foreground>
+    <inset android:drawable="@mipmap/ic_launcher_foreground" android:inset="16.5%" />
+  </foreground>
+  <background android:drawable="@color/ic_launcher_background"/>
+  <monochrome>
+    <inset android:drawable="@mipmap/ic_launcher_adaptive_foreground" android:inset="16.5%" />
+  </monochrome>
+</adaptive-icon>
+`
+  );
+  mkdirSync(join(out, 'values'), { recursive: true });
+  writeFileSync(
+    join(out, 'values', 'ic_launcher_background.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">${icon.backgroundColor}</color>
+</resources>
+`
+  );
+}
+
 const temporary = mkdtempSync(join(tmpdir(), 'zobel-app-icons-'));
 try {
   const plugin = pluginDirectory(temporary);
-  const rendered = await renderWithChromium(zobelIcons, temporary);
+  const [main, mono, ...rendered] = await renderWithChromium(
+    [mainIcon, mainMonochrome, ...zobelIcons],
+    temporary
+  );
+  writeMainIcon(main, mono, temporary);
 
   // The generator also rewrites the manifest; let it write a copy, and write the real one below
   // with every icon, so Sable's aliases stay.

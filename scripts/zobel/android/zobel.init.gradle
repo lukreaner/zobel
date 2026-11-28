@@ -22,6 +22,12 @@ gradle.beforeProject { project ->
             android.defaultConfig.applicationId = applicationId
             android.defaultConfig.resValue('string', 'app_name', appName)
             android.defaultConfig.resValue('string', 'main_activity_title', appName)
+            // Zobel's main icon, written by scripts/zobel/app-icons.mjs with the names of Sable's
+            // (ic_launcher…). A build type's resources win over main's, so these replace Sable's
+            // launcher icon, and the splash screen's, which uses it, without touching Sable's files.
+            def icon = new File(System.getenv('ZOBEL_ANDROID_ICON_RES') ?: "${project.rootDir}/../../../zobel/android/res").canonicalFile
+            if (!icon.directory) throw new GradleException("Zobel: no main icon in ${icon}; run node scripts/zobel/app-icons.mjs")
+            ['debug', 'release'].each { android.sourceSets.maybeCreate(it).res.srcDir(icon) }
             project.logger.lifecycle("Zobel: building ${project.path} as ${appName} (${applicationId})")
         } as Action)
     }

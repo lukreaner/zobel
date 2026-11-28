@@ -27,14 +27,14 @@
     "chatLookMenuTop": "Oben",
     "chatLookMenuBottom": "Schwebend unten",
     "appIcons": {
-      "zobel_sticker": "Sticker",
       "zobel_papercut": "Papierschnitt",
       "zobel_linocut": "Linoldruck",
       "zobel_watercolor": "Aquarell",
       "zobel_riso": "Risodruck",
       "zobel_chalk": "Kreide",
       "zobel_lineart": "Strichzeichnung",
-      "zobel_pixel": "Pixel"
+      "zobel_pixel": "Pixel",
+      "zobel_sable": "Sable"
     }
   }
 }

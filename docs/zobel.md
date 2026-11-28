@@ -150,16 +150,22 @@ in the table above.
 
 - **App icons of Zobel's own (Android).** Sable lets Android and iOS users pick another launcher
   icon (Settings → Appearance → App icon) through `tauri-plugin-app-icon`: each icon is an
-  `activity-alias` in the manifest, and choosing one enables its alias. Zobel adds eight icons of
-  its own, listed in `src/lib/zobel/app-icons/icons.json` next to their SVG sources. The same SVGs
-  are the previews in the picker. [`scripts/zobel/app-icons.mjs`](../scripts/zobel/app-icons.mjs)
-  renders the SVGs with Playwright's Chromium (resvg, which `tauri icon` would use, draws their
-  noise and displacement filters differently), runs the plugin's generator on the result for
-  Zobel's icons only, so Sable's resources stay untouched, and writes the manifest's aliases with
-  Zobel's before Sable's:
+  `activity-alias` in the manifest, and choosing one enables its alias. Zobel replaces the main
+  icon and adds icons of its own, listed in `src/lib/zobel/app-icons/icons.json` (`default` and
+  `icons`) next to their SVG sources. The same SVGs are the previews in the picker; Sable's main
+  icon stays selectable as `zobel_sable`.
+  [`scripts/zobel/app-icons.mjs`](../scripts/zobel/app-icons.mjs) renders the SVGs with
+  Playwright's Chromium (resvg, which `tauri icon` would use, draws their noise and displacement
+  filters differently) and then
+  - writes the main icon to `zobel/android/res` with the names of Sable's (`ic_launcher…`, plus a
+    one-colour layer for themed icons). `zobel.init.gradle` adds that directory to the `debug` and
+    `release` build types, whose resources win over `main`'s, so Zobel's build uses it for the
+    launcher and the splash screen while Sable's files stay as they are;
+  - runs the plugin's generator for Zobel's other icons only, so Sable's resources stay untouched,
+    and writes the manifest's aliases with Zobel's before Sable's.
 
   ```sh
-  node scripts/zobel/app-icons.mjs   # then commit the manifest and the new files in res/mipmap-*
+  node scripts/zobel/app-icons.mjs   # then commit zobel/android/res, the manifest and res/mipmap-*
   ```
 
   Run it after changing Zobel's icons, and after a merge from Sable that rewrote the aliases
@@ -241,7 +247,8 @@ Its tests run with `node --test scripts/zobel/*.test.mjs`.
 
 Sable's Android project is built unchanged, except that
 [`scripts/zobel/android/zobel.init.gradle`](../scripts/zobel/android/zobel.init.gradle) sets
-the application ID `io.github.lukreaner.zobel` and the name "Zobel" while Gradle runs.
+the application ID `io.github.lukreaner.zobel`, the name "Zobel" and Zobel's icon while Gradle
+runs.
 [`scripts/zobel/android-build.sh`](../scripts/zobel/android-build.sh) installs that script
 for one build and otherwise runs `pnpm android:build` with the same arguments. Kotlin
 package, JNI names and Tauri's identifier stay `moe.sable.client`: Android installs by the
@@ -250,7 +257,7 @@ application ID alone, and renaming the rest would touch files Sable edits consta
 It is Sable's FOSS build: no Firebase Cloud Messaging inside the app, push through
 UnifiedPush as in Sable's FOSS APK. Firebase is only used to hand the APK to testers.
 
-Still Sable's: the default icon (Zobel's own are offered as alternatives), and the link schemes `moe.sable.next`, `sable` and `matrix`. With
+Still Sable's: the link schemes `moe.sable.next`, `sable` and `matrix`. With
 both apps installed, Android asks which one opens such a link.
 
 ### What the workflow needs

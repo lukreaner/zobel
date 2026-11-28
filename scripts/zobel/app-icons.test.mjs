@@ -36,6 +36,27 @@ test("Sable's icons keep their launcher aliases", () => {
   }
 });
 
+test("Zobel's main icon is there at every density, named like Sable's", () => {
+  const main = join(root, 'zobel/android/res');
+  assert.ok(existsSync(join(main, 'mipmap-anydpi-v26/ic_launcher.xml')));
+  assert.ok(existsSync(join(main, 'values/ic_launcher_background.xml')));
+  for (const density of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+    for (const name of ['', '_round', '_foreground', '_adaptive_foreground']) {
+      const image = join(main, `mipmap-${density}`, `ic_launcher${name}.png`);
+      assert.ok(existsSync(image), image);
+    }
+  }
+  // Sable's own resources keep these names, so the build type's copies replace them.
+  assert.ok(existsSync(join(resources, 'mipmap-xxxhdpi/ic_launcher.png')));
+  assert.ok(existsSync(join(resources, 'mipmap-anydpi-v26/ic_launcher.xml')));
+});
+
+test("the Gradle init script lays the main icon over Sable's", () => {
+  const init = readFileSync(join(root, 'scripts/zobel/android/zobel.init.gradle'), 'utf8');
+  assert.match(init, /zobel\/android\/res/);
+  assert.match(init, /\['debug', 'release'\]/);
+});
+
 for (const { id, source } of zobel.icons) {
   test(`the ${id} icon is in the Android app, off until chosen`, () => {
     assert.ok(existsSync(resolve(dirname(zobelConfig), source)), source);

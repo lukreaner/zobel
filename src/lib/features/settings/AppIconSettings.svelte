@@ -29,7 +29,6 @@
   } from '#lib/zobel/app-icons.js';
 
   const previews: Record<string, string> = {
-    ...ZOBEL_APP_ICON_PREVIEWS,
     primary: defaultIcon,
     propeller,
     agender,
@@ -44,6 +43,7 @@
     ukraine,
     palestine,
     cuba,
+    ...ZOBEL_APP_ICON_PREVIEWS,
   };
   let icons = $state.raw<string[]>([]);
   let selected = $state('primary');
