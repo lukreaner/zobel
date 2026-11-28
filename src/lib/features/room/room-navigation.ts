@@ -13,6 +13,7 @@ import {
 import { isEditableTarget } from '#lib/ui/shortcuts/binding.js';
 import { matchesAppLayout } from '#lib/ui/app-layout.svelte.js';
 import { focusRegion } from '#lib/ui/shortcuts/focus-regions.js';
+import { focusComposerOnOpen } from '#lib/zobel/composer-focus.js';
 
 let enteredFrom: string | null = null;
 
@@ -95,7 +96,12 @@ export function trackRouteFocus(): (href: string) => Promise<void> {
     const fromTree = from?.isConnected && from.closest(TREE_REGIONS);
     const to = navigation.to?.url;
     const shortcut = navigation.type === 'goto' && to?.href === composerNavigation?.href;
-    if (to && ROOM_PATH.test(to.pathname) && (fromTree || shortcut) && matchesAppLayout()) {
+    if (
+      to &&
+      ROOM_PATH.test(to.pathname) &&
+      (shortcut || (fromTree && focusComposerOnOpen())) &&
+      matchesAppLayout()
+    ) {
       const focusComposer = () => {
         if (
           (document.activeElement !== document.body && document.activeElement !== from) ||

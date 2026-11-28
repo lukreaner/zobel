@@ -13,6 +13,8 @@
   import { PREFERENCE_RANGES } from '#lib/settings/definitions.js';
   import { bannerChanges, readRoomBanner } from '#lib/features/room/room-banner.svelte.js';
   import Banner from '#lib/ui/primitives/Banner.svelte';
+  import { messengerLook } from '#lib/zobel/chat-look.svelte.js';
+  import SectionSwitcher from '#lib/zobel/SectionSwitcher.svelte';
 
   interface Props {
     activeSpace: RoomListItemView | null;
@@ -123,6 +125,8 @@
           {/snippet}
           {@render menuItems()}
         </ActionMenu>
+      {:else if messengerLook()}
+        <SectionSwitcher {title} {activeSpace} {onNavigate} />
       {:else if titleHref}
         <!-- eslint-disable svelte/no-navigation-without-resolve -- the caller passes a resolved href -->
         <a

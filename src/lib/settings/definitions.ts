@@ -259,6 +259,7 @@ const SETTINGS = {
     account: true,
     device: true,
   }),
+  chatLook: choice(['sable', 'messenger'], 'sable', { account: true, device: true }),
   threadPresentation: choice<ThreadPresentation>(['timeline', 'panel'], 'timeline', {
     account: true,
     device: true,
@@ -388,6 +389,7 @@ const SETTINGS = {
 
   composerForm: choice<ComposerForm>(['short', 'adaptive', 'tall'], 'tall', { account: true }),
   alwaysInlineEditor: toggle(false, { account: true }),
+  focusComposerOnOpen: choice(['auto', 'always', 'never'], 'auto', { account: true, device: true }),
   enterForNewline: choice<EnterKey>(['adaptive', 'newline', 'send'], 'adaptive', {
     account: true,
     device: true,

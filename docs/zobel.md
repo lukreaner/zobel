@@ -67,10 +67,17 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/features/room/timeline/TimelineList.svelte`                                   | Hands read receipts to the "Seen" button when it is on                                                    |
 | `src/lib/features/forum/ForumPage.svelte`                                              | The same for forum rooms                                                                                  |
 | `src/lib/features/room/settings/RoomGeneralSettings.svelte`                            | Shows the per-chat choice for "Seen"                                                                      |
-| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices                                                                                |
+| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices and marks the page with the look                                               |
 | `src/lib/ui/breakpoints.ts`, `src/lib/ui/media.css`, `src/lib/ui/app-layout.svelte.ts` | Touch screens from 37rem wide get the split view (foldables in portrait), also while the keyboard is open |
 | `src/lib/ui/breakpoints.test.ts`                                                       | Expects that breakpoint in the CSS                                                                        |
-| `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list the setting `manualReadReceipts`                                                     |
+| `src/lib/settings/definitions.ts`                                                      | Also adds the settings `chatLook` and `focusComposerOnOpen`                                               |
+| `src/lib/settings/registry/appearance.ts`                                              | Lists `chatLook` under Appearance, in a section of its own                                                |
+| `src/lib/settings/registry/composer.ts`                                                | Lists `focusComposerOnOpen` under Composer                                                                |
+| `src/lib/features/room/room-navigation.ts`                                             | Asks `focusComposerOnOpen()` before focusing the message field of a chat opened from the list             |
+| `src/lib/features/sidebar/SidebarNav.svelte`                                           | Leaves out the bar of spaces in the messenger look                                                        |
+| `src/lib/features/sidebar/RoomNavHeader.svelte`                                        | Shows the list menu in the messenger look                                                                 |
+| `src/lib/features/sidebar/RoomNav.svelte`                                              | Shows the time of the last message in the messenger look                                                  |
+| `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list Zobel's settings                                                                     |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                             |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                |
 
@@ -107,6 +114,24 @@ in the table above.
   app asks for a receipt) and `tests/e2e/zobel-seen-homeserver.spec.ts` (what a real homeserver
   then tells the other member of the chat).
 
+- **Messenger look.** The setting "Look" (Appearance) offers "Messenger (like Signal and
+  Beeper)". `src/lib/zobel/chat-look.svelte.ts` marks `<html>` with `data-zobel-look` and, while a
+  chat with a single other person is open, `data-zobel-chat="one-to-one"`; everything visual is
+  in `src/lib/zobel/messenger-look.css`, which reaches into Sable's components by their class
+  names. Choosing the look also sets Sable's `layout` to bubbles and `messagePreviews` to all;
+  going back to Sable's look resets whichever of them nobody changed since. In place of the
+  bar of spaces, `src/lib/zobel/SectionSwitcher.svelte` turns the list's title into a menu of all
+  lists, and `src/lib/zobel/RoomRowTime.svelte` adds the time to each chat row.
+
+  After a merge from Sable has touched the room list, the timeline or the message field, run
+  `tests/e2e/zobel-look.spec.ts`, with `ZOBEL_SHOTS=<directory>` to also get screenshots to look at.
+
+- **Message field focus when opening a chat.** Sable focuses the message field of a chat opened
+  from the list in the wide layout, which opens the keyboard on touch screens in the split view.
+  The setting `focusComposerOnOpen` (Composer) is `auto` by default: only where the main pointer
+  is not a finger (`src/lib/zobel/composer-focus.ts`). Tests: `src/lib/zobel/composer-focus.test.ts`
+  and `tests/e2e/zobel-composer-focus.spec.ts`.
+
 ## End-to-end tests without Docker
 
 Sable's end-to-end tests start their homeserver in a Docker container.
@@ -121,7 +146,7 @@ pnpm exec playwright test -c tests/e2e/playwright.zobel-local.config.ts zobel-se
 The homeserver is a [Continuwuity](https://forgejo.ellis.link/continuwuation/continuwuity)
 binary set up as `tests/e2e/fixtures/continuwuity.ts` sets up its container: server name
 `test.local`, registration token `sable-e2e`, listening on http://127.0.0.1:18008 (or wherever
-`ZOBEL_E2E_HOMESERVER` points). So far only the `zobel-seen` tests have
+`ZOBEL_E2E_HOMESERVER` points). So far only the `zobel-*` tests have
 been run this way.
 
 ## Releases

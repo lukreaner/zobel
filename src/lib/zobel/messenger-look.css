@@ -1,0 +1,186 @@
+/*
+ * Zobel's messenger look (Appearance → Look → Messenger), modelled on Signal and Beeper.
+ * Everything here applies only while `<html data-zobel-look="messenger">`, which
+ * `trackChatLook()` sets. The selectors reach into Sable's components by their class names,
+ * so after a merge from Sable check the look with `tests/e2e/zobel-look.spec.ts`.
+ */
+
+/* No bar of spaces: `SectionSwitcher` above the list takes its place. */
+html[data-zobel-look='messenger'] {
+  --navigation-rail-width: 0px;
+  --zobel-list-avatar: 3rem;
+  --zobel-bubble-radius: 1.125rem;
+}
+
+/* Round pictures everywhere, as messengers draw them. */
+html[data-zobel-look='messenger'] .avatar-root {
+  border-radius: 50%;
+}
+
+/* The narrow room list keeps its strip of tools, which was as wide as the bar of spaces. */
+html[data-zobel-look='messenger'] .compact-tools {
+  flex-basis: 4.125rem;
+  width: 4.125rem;
+}
+
+/* ── The list of chats ─────────────────────────────────────────────────────────────────── */
+
+html[data-zobel-look='messenger'] .room-nav-header h2 {
+  font-size: var(--font-size-subheading);
+  min-width: 0;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row-wrap:not(.thread-row) {
+  border-radius: var(--radius-outer);
+}
+
+html[data-zobel-look='messenger']
+  .room-list:not(.collapsed)
+  .room-row-wrap:not(.thread-row)
+  .room-row {
+  border-radius: var(--radius-outer);
+  column-gap: var(--space-300);
+  display: grid;
+  grid-template:
+    'avatar text time' 1fr
+    'avatar text status' 1fr / auto minmax(0, 1fr) auto;
+  min-height: 4.5rem;
+  padding-block: var(--space-200);
+  padding-inline-end: var(--space-300);
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-avatar,
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-icon {
+  align-self: center;
+  grid-area: avatar;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-avatar-icon,
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .group-avatar {
+  --avatar-size: var(--zobel-list-avatar);
+
+  font-size: var(--font-size-subheading);
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .group-avatar {
+  height: var(--zobel-list-avatar);
+  width: var(--zobel-list-avatar);
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-icon {
+  border-radius: 50%;
+  flex-basis: var(--zobel-list-avatar);
+  height: var(--zobel-list-avatar);
+  width: var(--zobel-list-avatar);
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-text {
+  align-self: center;
+  gap: var(--space-050);
+  grid-area: text;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-name {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-600);
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-topic {
+  font-size: var(--font-size-small);
+  margin-top: 0;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .zobel-row-time {
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-400);
+  grid-area: time;
+  opacity: var(--opacity-p300);
+  place-self: end end;
+  white-space: nowrap;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row.unread .zobel-row-time {
+  color: var(--primary-main);
+  opacity: 1;
+}
+
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .room-status,
+html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-row .voice-live {
+  align-self: start;
+  grid-area: status;
+  justify-content: end;
+}
+
+/* A row without a time keeps its badge in the middle. */
+html[data-zobel-look='messenger']
+  .room-list:not(.collapsed)
+  .room-row:not(:has(.zobel-row-time))
+  .room-status {
+  align-self: center;
+  grid-row: 1 / -1;
+}
+
+/* Rows are opened by a tap and their options by a long press, as in a messenger. */
+@media (pointer: coarse) {
+  html[data-zobel-look='messenger'] .room-list:not(.collapsed) .room-options-slot {
+    display: none;
+  }
+}
+
+/* ── Messages ─────────────────────────────────────────────────────────────────────────── */
+
+/* Other people's messages a shade lighter than the chat, as in Signal, your own in the accent
+   colour, like Signal's blue ones. */
+html[data-zobel-look='messenger'] .message.layout-bubble :is(.content-bubble, .formatted-body) {
+  background: var(--bg-container-active);
+  border-radius: var(--zobel-bubble-radius);
+  color: var(--bg-on-container);
+}
+
+html[data-zobel-look='messenger'] .message.layout-bubble.own :is(.content-bubble, .formatted-body) {
+  background: var(--primary-main);
+  color: var(--primary-on-main);
+}
+
+html[data-zobel-look='messenger'] .message.layout-bubble .content-bubble .formatted-body {
+  background: none;
+  border-radius: 0;
+}
+
+html[data-zobel-look='messenger'] .message.layout-bubble.own .formatted-body a {
+  color: inherit;
+}
+
+/* Bubbles leave room on the other side, so it stays clear who wrote what. */
+html[data-zobel-look='messenger'] .message.layout-bubble .message-main > :is(.content-bubble, div) {
+  max-width: min(50rem, 85%);
+}
+
+/* With only one other person, their name and picture above each message say nothing new. */
+html[data-zobel-look='messenger'][data-zobel-chat='one-to-one']
+  .message.layout-bubble:not(.own)
+  > :is(.message-avatar, .sender-avatar-button),
+html[data-zobel-look='messenger'][data-zobel-chat='one-to-one']
+  .message.layout-bubble:not(.own)
+  header
+  :is(.sender-identity, .via) {
+  display: none;
+}
+
+html[data-zobel-look='messenger'][data-zobel-chat='one-to-one']
+  .message.layout-bubble:not(.own)
+  header
+  .message-details {
+  justify-content: start;
+}
+
+html[data-zobel-look='messenger'][data-zobel-chat='one-to-one']
+  .message.layout-bubble:not(.own).collapsed {
+  padding-inline-start: calc(var(--row-inset-start) + var(--selection-gutter));
+}
+
+/* ── The message field ────────────────────────────────────────────────────────────────── */
+
+html[data-zobel-look='messenger'] .composer {
+  border-radius: calc(var(--zobel-bubble-radius) + var(--space-100));
+}

@@ -79,6 +79,8 @@
     type SidebarThread,
   } from './thread-sidebar.svelte.js';
   import RoomVoiceLive from './RoomVoiceLive.svelte';
+  import { messengerLook } from '#lib/zobel/chat-look.svelte.js';
+  import RoomRowTime from '#lib/zobel/RoomRowTime.svelte';
   import { claimedRoomIds, markRoomsRead } from './nav-rooms.js';
   import { roomRow, type RoomNavRow } from './nav-rows.js';
   import { PeerProfiles } from './peer-profiles.svelte.js';
@@ -729,6 +731,9 @@
           {/if}
           {#if !collapsed}
             <RoomRowText {name} {room} {preview} {peerStatus} />
+            {#if messengerLook() && room?.latest_event?.timestamp}
+              <RoomRowTime timestamp={room.latest_event.timestamp} />
+            {/if}
           {/if}
           {#if room && live > 0 && (!collapsed || voicePlacement === 'inline')}
             <RoomVoiceLive

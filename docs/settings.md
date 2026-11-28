@@ -55,6 +55,7 @@ accepts the same settings except those marked deployment only.
 
 ## Appearance
 
+- `chatLook` (Look): One of `sable`, `messenger`. Default `sable`.
 - `theme` (Light or dark): One of `system`, `dark`, `light`. Default `system`.
 - `deploymentTheme` (Use this server’s theme): `true` or `false`. Default `true`.
 - `saturation` (Saturation): Number from 0 to 2. Default `1`. Deployment only.
@@ -138,6 +139,7 @@ accepts the same settings except those marked deployment only.
 
 - `composerForm` (Composer height): One of `short`, `adaptive`, `tall`. Default `tall`.
 - `alwaysInlineEditor` (Always inline editor): `true` or `false`. Default `false`.
+- `focusComposerOnOpen` (Jump to the message field when opening a chat): One of `auto`, `always`, `never`. Default `auto`.
 - `enterForNewline` (Newline on touch screens, send otherwise): One of `adaptive`, `newline`, `send`. Default `adaptive`.
 - `sedEdits` (Edit your last message with s/old/new): `true` or `false`. Default `false`.
 - `linkMscReferences` (Link MSC references): One of `ask`, `always`, `never`. Default `ask`.

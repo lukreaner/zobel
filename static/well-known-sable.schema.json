@@ -152,6 +152,14 @@
           ],
           "default": "modern"
         },
+        "chatLook": {
+          "title": "Look",
+          "enum": [
+            "sable",
+            "messenger"
+          ],
+          "default": "sable"
+        },
         "threadPresentation": {
           "title": "Threads and discussions",
           "enum": [
@@ -661,6 +669,15 @@
           "title": "Always inline editor",
           "type": "boolean",
           "default": false
+        },
+        "focusComposerOnOpen": {
+          "title": "Jump to the message field when opening a chat",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto"
         },
         "enterForNewline": {
           "title": "Newline on touch screens, send otherwise",
@@ -1045,6 +1062,14 @@
           ],
           "default": "modern"
         },
+        "chatLook": {
+          "title": "Look",
+          "enum": [
+            "sable",
+            "messenger"
+          ],
+          "default": "sable"
+        },
         "threadPresentation": {
           "title": "Threads and discussions",
           "enum": [
@@ -1554,6 +1579,15 @@
           "title": "Always inline editor",
           "type": "boolean",
           "default": false
+        },
+        "focusComposerOnOpen": {
+          "title": "Jump to the message field when opening a chat",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto"
         },
         "enterForNewline": {
           "title": "Newline on touch screens, send otherwise",

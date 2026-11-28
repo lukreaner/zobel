@@ -8,6 +8,19 @@
     "roomReadReceiptsTitle": "Mark as read by hand",
     "roomReadReceiptsHint": "With this on, this chat is only marked as read once you tap “Seen” below the messages. Only for you. Reaches your other devices when “Sync settings across devices” is on.",
     "roomReadReceiptsOn": "On",
-    "roomReadReceiptsOff": "Off"
+    "roomReadReceiptsOff": "Off",
+    "focusComposerOnOpen": "Jump to the message field when opening a chat",
+    "focusComposerOnOpenHint": "On a touch screen this also opens the keyboard. “Automatic” only does it where the main input is a mouse or touchpad, not a touch screen.",
+    "focusComposerOnOpenTerms": "keyboard, focus, composer, message field, open chat, autofocus",
+    "focusComposerOnOpenAuto": "Automatic",
+    "chatLookSection": "Layout",
+    "chatLook": "Look",
+    "chatLookHint": "“Messenger” arranges Zobel like Signal or Beeper: one list of chats with the last message and its time, a menu above it in place of the bar of spaces, and messages in bubbles with yours on the right. Choosing it also switches the message layout to bubbles and turns on message previews; both can be changed again on their own.",
+    "chatLookTerms": "layout, design, Signal, Beeper, WhatsApp, Discord, messenger, bubbles, chat list",
+    "chatLookSable": "Sable",
+    "chatLookMessenger": "Messenger (like Signal and Beeper)",
+    "sections": "Lists",
+    "sectionMenu": "Switch list",
+    "createOrJoin": "Create or join"
   }
 }

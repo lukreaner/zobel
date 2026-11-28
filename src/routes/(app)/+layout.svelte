@@ -106,6 +106,7 @@
     workspaceDocument,
   } from '#lib/settings/sync-documents.js';
   import { manualReadReceiptsDocument } from '#lib/zobel/manual-read-receipts.svelte.js';
+  import { trackChatLook } from '#lib/zobel/chat-look.svelte.js';
   import {
     registerNativePush,
     retryNativePushNow,
@@ -411,6 +412,8 @@
   $effect(() => {
     document.documentElement.dataset.underlineLinks = preferences.underlineLinks ? 'on' : 'off';
   });
+
+  trackChatLook();
 
   const syncDocuments = $derived([
     settingsDocument,

@@ -8,6 +8,19 @@
     "roomReadReceiptsTitle": "Von Hand als gelesen markieren",
     "roomReadReceiptsHint": "Ist das an, gilt dieser Chat erst als gelesen, wenn du unter den Nachrichten auf „Gesehen“ tippst. Gilt nur für dich. Wird auf deine anderen Geräte übertragen, wenn du deine Einstellungen zwischen Geräten synchronisierst.",
     "roomReadReceiptsOn": "An",
-    "roomReadReceiptsOff": "Aus"
+    "roomReadReceiptsOff": "Aus",
+    "focusComposerOnOpen": "Beim Öffnen eines Chats ins Eingabefeld springen",
+    "focusComposerOnOpenHint": "Auf Touchscreens öffnet sich dabei auch die Tastatur. „Automatisch“ tut das nur, wenn du hauptsächlich mit Maus oder Touchpad arbeitest, nicht auf Touchscreens.",
+    "focusComposerOnOpenTerms": "Tastatur, Fokus, Eingabefeld, Nachrichtenfeld, Chat öffnen, automatisch",
+    "focusComposerOnOpenAuto": "Automatisch",
+    "chatLookSection": "Layout",
+    "chatLook": "Aussehen",
+    "chatLookHint": "„Messenger“ ordnet Zobel wie Signal oder Beeper an: eine Liste deiner Chats mit letzter Nachricht und Uhrzeit, darüber ein Menü statt der Leiste mit Spaces, und Nachrichten in Blasen, deine eigenen rechts. Dabei stellt Zobel auch das Nachrichtenlayout auf Blasen und schaltet Nachrichtenvorschauen ein; beides lässt sich danach einzeln wieder ändern.",
+    "chatLookTerms": "Layout, Design, Aussehen, Signal, Beeper, WhatsApp, Discord, Messenger, Blasen, Chatliste",
+    "chatLookSable": "Sable",
+    "chatLookMessenger": "Messenger (wie Signal und Beeper)",
+    "sections": "Listen",
+    "sectionMenu": "Liste wechseln",
+    "createOrJoin": "Erstellen oder beitreten"
   }
 }

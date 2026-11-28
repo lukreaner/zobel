@@ -3,6 +3,7 @@ import ChecksIcon from 'phosphor-svelte/lib/ChecksIcon';
 import CodeIcon from 'phosphor-svelte/lib/CodeIcon';
 import GifIcon from 'phosphor-svelte/lib/GifIcon';
 import KeyReturnIcon from 'phosphor-svelte/lib/KeyReturnIcon';
+import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
 import LinkSimpleIcon from 'phosphor-svelte/lib/LinkSimpleIcon';
 import MapPinIcon from 'phosphor-svelte/lib/MapPinIcon';
 import LockIcon from 'phosphor-svelte/lib/LockIcon';
@@ -85,6 +86,20 @@ export const composerCategory: SettingsCategory = {
         { value: 'send', label: 'settings.enterForNewlineSend' },
       ],
       panel: 'composer-enter',
+    },
+    {
+      key: 'focusComposerOnOpen',
+      section: 'writing',
+      icon: KeyboardIcon,
+      name: 'zobel.focusComposerOnOpen',
+      description: 'zobel.focusComposerOnOpenHint',
+      terms: ['zobel.focusComposerOnOpenTerms'],
+      type: 'select',
+      options: [
+        { value: 'auto', label: 'zobel.focusComposerOnOpenAuto' },
+        { value: 'always', label: 'common.always' },
+        { value: 'never', label: 'common.never' },
+      ],
     },
     {
       key: 'richTextComposer',

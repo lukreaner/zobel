@@ -40,6 +40,7 @@
   import { isActiveSpace, markRoomsRead } from './nav-rooms.js';
   import CoreHealthBanner from '#lib/ui/CoreHealthBanner.svelte';
   import AlertDrawer from './AlertDrawer.svelte';
+  import { messengerLook } from '#lib/zobel/chat-look.svelte.js';
 
   interface Props {
     mobile?: boolean;
@@ -290,21 +291,23 @@
     <nav class="mobile-navigation" aria-label={i18n.t('nav.primary')}>
       <CoreHealthBanner />
       <div class="navigation-main">
-        <NavigationRail
-          {pathname}
-          {spaces}
-          {spaceUnread}
-          {callSpaces}
-          {voiceSpaces}
-          {homeUnread}
-          {unspacedUnread}
-          {directRooms}
-          {directUnread}
-          unreadFor={roomList.badgeUnreadFor}
-          mobile
-          {onNavigate}
-          {...railProps}
-        />
+        {#if !messengerLook()}
+          <NavigationRail
+            {pathname}
+            {spaces}
+            {spaceUnread}
+            {callSpaces}
+            {voiceSpaces}
+            {homeUnread}
+            {unspacedUnread}
+            {directRooms}
+            {directUnread}
+            unreadFor={roomList.badgeUnreadFor}
+            mobile
+            {onNavigate}
+            {...railProps}
+          />
+        {/if}
         <RoomNav
           {pathname}
           {spaceId}
@@ -323,20 +326,22 @@
   {:else}
     <nav class="desktop-navigation" aria-label={i18n.t('nav.primary')}>
       <div class="desktop-navigation-main">
-        <NavigationRail
-          {pathname}
-          {spaces}
-          {spaceUnread}
-          {callSpaces}
-          {voiceSpaces}
-          {homeUnread}
-          {unspacedUnread}
-          {directRooms}
-          {directUnread}
-          unreadFor={roomList.badgeUnreadFor}
-          compact={collapsed}
-          {...railProps}
-        />
+        {#if !messengerLook()}
+          <NavigationRail
+            {pathname}
+            {spaces}
+            {spaceUnread}
+            {callSpaces}
+            {voiceSpaces}
+            {homeUnread}
+            {unspacedUnread}
+            {directRooms}
+            {directUnread}
+            unreadFor={roomList.badgeUnreadFor}
+            compact={collapsed}
+            {...railProps}
+          />
+        {/if}
         <RoomNav
           {pathname}
           {spaceId}
