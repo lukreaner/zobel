@@ -1,5 +1,20 @@
 # Zobel Changelog
 
+## 0.3.0 (2026-11-28)
+
+### Features
+
+* In the Messenger look, the menu for switching lists can float at the bottom of the screen together with message search, as in Beeper, where a thumb reaches it more easily (Settings → Appearance → List menu).
+
+### Fixes
+
+* The Messenger look works with themes that keep the room list's rows short, such as Win95, Mac OS 9, Cyber Noir and Cyberpunk 77; their rows no longer overlap.
+* In the Messenger look, the list menu at the top shows the whole name of the list instead of a few letters, and the setting's description is a single short sentence.
+* On Android, notifications from chats named after the person who wrote, such as bridged WhatsApp chats, no longer show the name and picture twice.
+* "Seen" shows again in threads you have not read anything in yet.
+
+Based on Sable 26.11.5, with the changes of Sable 26.11.5 ([Sable's changelog](../CHANGELOG.md)).
+
 ## 0.2.0 (2026-11-28)
 
 ### Features
