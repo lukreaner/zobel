@@ -11,7 +11,7 @@ Zobel is at an early stage. This list is kept up to date with every change that 
 **What Zobel does differently**
 
 - **Marking chats as read by hand.** With "Mark chats as read by hand" on (Settings → Privacy), opening a chat no longer sends a read receipt. A "Seen" button below the messages sends it when you choose. Each chat can differ from the setting in its own settings, and these choices sync between your devices when settings sync is on.
-- **Split view on foldables.** On touch screens from about 600 pixels wide, such as an unfolded foldable in portrait or a small tablet, the chat opens next to the room list. Sable only does that from 768 pixels.
+- **Split view on foldables.** On touch screens from about 600 pixels wide, such as an unfolded foldable in portrait or a small tablet, the chat opens next to the room list, and it stays there while the keyboard is open. Sable only does that from 768 pixels.
 - **Name.** The app is called Zobel: in the window title, the installed web app, and the interface text that names the app. Text about the Sable project, its services, themes and supporters still says Sable.
 - **Links.** The source code link, the update check and the bug report form lead to [this repository](https://github.com/lukreaner/zobel) and its [issue tracker](https://github.com/lukreaner/zobel/issues), not to Sable's.
 - **No community rooms.** Sable's support and feature-request rooms are for Sable's own client, so Zobel does not link to them.

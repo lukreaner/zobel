@@ -54,25 +54,25 @@ same commit, along with the change file in `zobel/changes`.
 These are the places where Zobel changes a file that Sable also maintains. Each is a few
 lines, and a conflict there is resolved by keeping Zobel's line.
 
-| File                                                                                   | Change                                                                   |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `src/lib/deployment/default-app-name.ts`                                               | The app is called Zobel                                                  |
-| `src/lib/deployment/links.ts`                                                          | Source link and update feed point to Zobel; no community rooms           |
-| `src/lib/features/bug-report/forge.ts`                                                 | Bug reports go to Zobel's GitHub issues                                  |
-| `src/lib/features/settings/AboutSettings.svelte`                                       | "Powered by Sable." is always shown                                      |
-| `src/lib/i18n.ts`                                                                      | Passes each language through `src/lib/zobel/locale.ts`                   |
-| `src/app.html`, `static/manifest.webmanifest`                                          | Name of the installed web app                                            |
-| `src/lib/settings/definitions.ts`                                                      | Adds the setting `manualReadReceipts`                                    |
-| `src/lib/settings/registry/privacy.ts`                                                 | Lists that setting under Privacy                                         |
-| `src/lib/features/room/timeline/TimelineList.svelte`                                   | Hands read receipts to the "Seen" button when it is on                   |
-| `src/lib/features/forum/ForumPage.svelte`                                              | The same for forum rooms                                                 |
-| `src/lib/features/room/settings/RoomGeneralSettings.svelte`                            | Shows the per-chat choice for "Seen"                                     |
-| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices                                               |
-| `src/lib/ui/breakpoints.ts`, `src/lib/ui/media.css`, `src/lib/ui/app-layout.svelte.ts` | Touch screens from 37rem wide get the split view (foldables in portrait) |
-| `src/lib/ui/breakpoints.test.ts`                                                       | Expects that breakpoint in the CSS                                       |
-| `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list the setting `manualReadReceipts`                    |
-| `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files            |
-| Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                               |
+| File                                                                                   | Change                                                                                                    |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/lib/deployment/default-app-name.ts`                                               | The app is called Zobel                                                                                   |
+| `src/lib/deployment/links.ts`                                                          | Source link and update feed point to Zobel; no community rooms                                            |
+| `src/lib/features/bug-report/forge.ts`                                                 | Bug reports go to Zobel's GitHub issues                                                                   |
+| `src/lib/features/settings/AboutSettings.svelte`                                       | "Powered by Sable." is always shown                                                                       |
+| `src/lib/i18n.ts`                                                                      | Passes each language through `src/lib/zobel/locale.ts`                                                    |
+| `src/app.html`, `static/manifest.webmanifest`                                          | Name of the installed web app                                                                             |
+| `src/lib/settings/definitions.ts`                                                      | Adds the setting `manualReadReceipts`                                                                     |
+| `src/lib/settings/registry/privacy.ts`                                                 | Lists that setting under Privacy                                                                          |
+| `src/lib/features/room/timeline/TimelineList.svelte`                                   | Hands read receipts to the "Seen" button when it is on                                                    |
+| `src/lib/features/forum/ForumPage.svelte`                                              | The same for forum rooms                                                                                  |
+| `src/lib/features/room/settings/RoomGeneralSettings.svelte`                            | Shows the per-chat choice for "Seen"                                                                      |
+| `src/routes/(app)/+layout.svelte`                                                      | Syncs the per-chat choices                                                                                |
+| `src/lib/ui/breakpoints.ts`, `src/lib/ui/media.css`, `src/lib/ui/app-layout.svelte.ts` | Touch screens from 37rem wide get the split view (foldables in portrait), also while the keyboard is open |
+| `src/lib/ui/breakpoints.test.ts`                                                       | Expects that breakpoint in the CSS                                                                        |
+| `docs/settings.md`, `static/*.schema.json`                                             | Generated: they list the setting `manualReadReceipts`                                                     |
+| `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                             |
+| Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                |
 
 ## Interface text
 
