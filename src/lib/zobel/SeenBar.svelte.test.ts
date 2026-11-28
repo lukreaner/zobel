@@ -159,3 +159,59 @@ test('a thread whose read state cannot be looked up still gets the button', asyn
     expect(seenButton()).toBeInTheDocument();
   });
 });
+
+function threadItem(timestamp: number, isOwn = false) {
+  return { event_id: '$reply', timestamp, is_own: isOwn } as never;
+}
+
+test('a thread never read in shows the button for replies after the main read receipt', async () => {
+  // Sable's core reports nothing unread in a thread the reader has no receipt in.
+  core.rpc.timeline.unreadDiagnostics.mockResolvedValue({
+    main: { unread: 0, notifying: 0, highlight: 0, receipt_event_id: null },
+    server_notifications: 0,
+    unthreaded_receipt_timestamp: 1_000,
+    server_highlights: 0,
+    threads: [
+      { root_event_id: '$root', unread: 0, notifying: 0, highlight: 0, receipt_event_id: null },
+    ],
+  });
+  render(SeenBar, {
+    manual: true,
+    receipt: held('$reply'),
+    roomId: '!room:example.org',
+    threadRootId: '$root',
+    unread: false,
+    items: [threadItem(2_000)],
+    onSeen: vi.fn(),
+  });
+
+  await vi.waitFor(() => {
+    expect(seenButton()).toBeInTheDocument();
+  });
+});
+
+test('a thread never read in has no button when the main read receipt is newer', async () => {
+  core.rpc.timeline.unreadDiagnostics.mockResolvedValue({
+    main: { unread: 0, notifying: 0, highlight: 0, receipt_event_id: null },
+    server_notifications: 0,
+    unthreaded_receipt_timestamp: 3_000,
+    server_highlights: 0,
+    threads: [
+      { root_event_id: '$root', unread: 0, notifying: 0, highlight: 0, receipt_event_id: null },
+    ],
+  });
+  render(SeenBar, {
+    manual: true,
+    receipt: held('$reply'),
+    roomId: '!room:example.org',
+    threadRootId: '$root',
+    unread: true,
+    items: [threadItem(2_000)],
+    onSeen: vi.fn(),
+  });
+  await flushed();
+  await flushed();
+
+  expect(core.rpc.timeline.unreadDiagnostics).toHaveBeenCalled();
+  expect(seenButton()).not.toBeInTheDocument();
+});

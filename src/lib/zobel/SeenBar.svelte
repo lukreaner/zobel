@@ -11,6 +11,8 @@
   import Button from '#lib/ui/primitives/Button.svelte';
   import { toasts } from '#lib/ui/toasts.svelte.js';
 
+  import type { TimelineItemView } from '#src/generated/protocol';
+
   import type { HeldReadReceipt } from './manual-read-receipts.svelte.js';
 
   interface Props {
@@ -21,22 +23,58 @@
     threadRootId?: string | null;
     /** Whether the chat counts as unread. A thread is asked about separately. */
     unread: boolean;
+    /** The messages on screen; a thread is judged by its newest one. */
+    items?: readonly TimelineItemView[];
     onSeen: (eventId: string) => Promise<void>;
   }
 
-  let { manual, receipt, roomId, threadRootId = null, unread, onSeen }: Props = $props();
+  let {
+    manual,
+    receipt,
+    roomId,
+    threadRootId = null,
+    unread,
+    items = [],
+    onSeen,
+  }: Props = $props();
   const core = useCoreClient();
 
   let threadUnread = $state(false);
 
-  async function threadHasUnread(room: string, root: string): Promise<boolean> {
+  interface Newest {
+    timestamp: number;
+    own: boolean;
+  }
+
+  function newestOf(list: readonly TimelineItemView[]): Newest | null {
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const item = list[index];
+      if (item.event_id) return { timestamp: item.timestamp, own: item.is_own };
+    }
+    return null;
+  }
+
+  let newestTimestamp = $derived(newestOf(items)?.timestamp ?? null);
+  let newestOwn = $derived(newestOf(items)?.own ?? false);
+
+  async function threadHasUnread(
+    room: string,
+    root: string,
+    newest: Newest | null
+  ): Promise<boolean> {
     try {
       const read = await core.rpc.timeline.unreadDiagnostics({
         room_id: room,
         thread_roots: [root],
       });
       const thread = read.threads.find((entry) => entry.root_event_id === root);
-      return thread === undefined || thread.unread > 0;
+      if (thread?.receipt_event_id) return thread.unread > 0;
+      if (thread !== undefined && thread.unread > 0) return true;
+      // Never read in this thread: Sable's core counts nothing then, and Sable goes by the
+      // read receipt in the main chat, which covers everything sent before it.
+      if (newest === null) return true;
+      if (newest.own) return false;
+      return newest.timestamp > (read.unthreaded_receipt_timestamp ?? 0);
     } catch (error) {
       // Better a button too many than a thread that can never be marked as read.
       console.debug('[zobel] the read state of the thread is unknown', error);
@@ -47,9 +85,10 @@
   $effect(() => {
     const root = threadRootId;
     if (!manual || !roomId || root === null || receipt.eventId === null) return;
+    const newest = newestTimestamp === null ? null : { timestamp: newestTimestamp, own: newestOwn };
 
     let current = true;
-    void threadHasUnread(roomId, root).then((value) => {
+    void threadHasUnread(roomId, root, newest).then((value) => {
       if (current) threadUnread = value;
     });
     return () => {

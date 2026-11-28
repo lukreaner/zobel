@@ -1614,6 +1614,7 @@
   {roomId}
   {threadRootId}
   unread={hasUnread}
+  items={timeline.items}
   onSeen={markRead}
 />
 
