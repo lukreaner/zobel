@@ -92,5 +92,11 @@ class RustWebView(context: Context, val initScripts: Array<String>, val id: Stri
         return cookieManager.getCookie(url)
     }
 
+    // Zobel: lets keyboards such as Gboard insert GIFs and images (ZobelKeyboardImages.kt in the app).
+    override fun onCreateInputConnection(
+        outAttrs: android.view.inputmethod.EditorInfo
+    ): android.view.inputmethod.InputConnection? =
+        ZobelKeyboardImages.wrap(this, super.onCreateInputConnection(outAttrs), outAttrs)
+
     {{class-extension}}
 }
