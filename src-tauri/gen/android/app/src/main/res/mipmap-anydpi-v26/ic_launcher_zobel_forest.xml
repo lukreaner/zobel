@@ -4,6 +4,6 @@
     <inset android:drawable="@mipmap/ic_launcher_zobel_forest_foreground" android:inset="16.5%" />
   </foreground>
   <background>
-    <color android:color="#1F4A33"/>
+    <color android:color="#2C6842"/>
   </background>
 </adaptive-icon>
