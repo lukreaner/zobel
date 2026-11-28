@@ -260,6 +260,7 @@ const SETTINGS = {
     device: true,
   }),
   chatLook: choice(['sable', 'messenger'], 'sable', { account: true, device: true }),
+  chatLookMenu: choice(['top', 'bottom'], 'top', { account: true, device: true }),
   threadPresentation: choice<ThreadPresentation>(['timeline', 'panel'], 'timeline', {
     account: true,
     device: true,

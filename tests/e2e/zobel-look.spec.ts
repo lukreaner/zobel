@@ -99,6 +99,25 @@ test('the messenger look puts a list menu, times and bubbles in place', async ({
   await expect(title).toHaveText('Direct messages');
   expect(await title.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await shot(page, 'messenger-phone-list');
+
+  // The list menu can float at the bottom instead, within reach of a thumb.
+  await page.goto('/settings/appearance');
+  const placement = page
+    .getByRole('radiogroup', { name: 'List menu' })
+    .getByRole('radio', { name: 'Floating at the bottom' });
+  await placement.click({ timeout: COLD_BOOT_TIMEOUT });
+  await expect(placement).toBeChecked();
+  await page.goto('/direct');
+  await expect(row).toBeVisible({ timeout: COLD_BOOT_TIMEOUT });
+  const floating = page.locator('.zobel-section-switcher.floating');
+  await expect(floating).toHaveText(/Direct messages/);
+  await expect(page.locator('.room-nav-header .zobel-section-switcher')).toHaveCount(0);
+  const box = await floating.boundingBox();
+  expect(box && box.y > 800 / 2).toBe(true);
+  await shot(page, 'messenger-phone-floating');
+  await floating.click();
+  await expect(page.getByRole('menuitemradio', { name: /Rooms outside spaces/ })).toBeVisible();
+  await shot(page, 'messenger-phone-floating-menu');
 });
 
 test("Sable's look keeps the bar of spaces", async ({ page, app, homeserver, freshLogin }) => {

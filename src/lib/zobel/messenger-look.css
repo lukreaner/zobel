@@ -130,6 +130,16 @@ html[data-zobel-look='messenger']
   }
 }
 
+/* The list menu floating at the bottom (Appearance → List menu) sits over the list's end. */
+html[data-zobel-list-menu='bottom'] .navigation-main,
+html[data-zobel-list-menu='bottom'] .desktop-navigation-main {
+  position: relative;
+}
+
+html[data-zobel-list-menu='bottom'] .room-nav-content {
+  padding-bottom: calc(var(--space-800) + 2 * var(--space-400));
+}
+
 /* ── Messages ─────────────────────────────────────────────────────────────────────────── */
 
 /* Other people's messages a shade lighter than the chat, as in Signal, your own in the accent

@@ -74,7 +74,7 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/settings/registry/appearance.ts`                                              | Lists `chatLook` under Appearance, in a section of its own                                                                                                                                 |
 | `src/lib/settings/registry/composer.ts`                                                | Lists `focusComposerOnOpen` under Composer                                                                                                                                                 |
 | `src/lib/features/room/room-navigation.ts`                                             | Asks `focusComposerOnOpen()` before focusing the message field of a chat opened from the list                                                                                              |
-| `src/lib/features/sidebar/SidebarNav.svelte`                                           | Leaves out the bar of spaces in the messenger look                                                                                                                                         |
+| `src/lib/features/sidebar/SidebarNav.svelte`                                           | Leaves out the bar of spaces in the messenger look and adds the floating list menu                                                                                                         |
 | `src/lib/features/sidebar/RoomNavHeader.svelte`                                        | Shows the list menu in the messenger look                                                                                                                                                  |
 | `src/lib/features/sidebar/RoomNav.svelte`                                              | Shows the time of the last message in the messenger look                                                                                                                                   |
 | `src/lib/features/sidebar/RoomNav.svelte`                                              | On touch screens in the split view a chat opened from the list replaces the open one in the history (`src/lib/zobel/room-history.svelte.ts`, test: `tests/e2e/zobel-back-to-list.spec.ts`) |
@@ -124,7 +124,9 @@ in the table above.
   names. Choosing the look also sets Sable's `layout` to bubbles and `messagePreviews` to all;
   going back to Sable's look resets whichever of them nobody changed since. In place of the
   bar of spaces, `src/lib/zobel/SectionSwitcher.svelte` turns the list's title into a menu of all
-  lists, and `src/lib/zobel/RoomRowTime.svelte` adds the time to each chat row.
+  lists, and `src/lib/zobel/RoomRowTime.svelte` adds the time to each chat row. With the setting
+  `chatLookMenu` on `bottom`, that menu floats at the bottom of the list instead
+  (`data-zobel-list-menu` on `<html>`).
 
   After a merge from Sable has touched the room list, the timeline or the message field, run
   `tests/e2e/zobel-look.spec.ts`, with `ZOBEL_SHOTS=<directory>` to also get screenshots to look at.

@@ -1,4 +1,5 @@
 import ChatsCircleIcon from 'phosphor-svelte/lib/ChatsCircleIcon';
+import ListIcon from 'phosphor-svelte/lib/ListIcon';
 import LockSimpleIcon from 'phosphor-svelte/lib/LockSimpleIcon';
 import MoonIcon from 'phosphor-svelte/lib/MoonIcon';
 import PaintBrushIcon from 'phosphor-svelte/lib/PaintBrushIcon';
@@ -31,6 +32,19 @@ export const appearanceCategory: SettingsCategory = {
         { value: 'messenger', label: 'zobel.chatLookMessenger' },
       ],
       onChange: chooseChatLook,
+    },
+    {
+      key: 'chatLookMenu',
+      section: 'look',
+      icon: ListIcon,
+      name: 'zobel.chatLookMenu',
+      description: 'zobel.chatLookMenuHint',
+      type: 'select',
+      options: [
+        { value: 'top', label: 'zobel.chatLookMenuTop' },
+        { value: 'bottom', label: 'zobel.chatLookMenuBottom' },
+      ],
+      shownWhen: { key: 'chatLook', value: 'messenger' },
     },
     {
       key: 'theme',

@@ -56,6 +56,7 @@ accepts the same settings except those marked deployment only.
 ## Appearance
 
 - `chatLook` (Look): One of `sable`, `messenger`. Default `sable`.
+- `chatLookMenu` (List menu): One of `top`, `bottom`. Default `top`.
 - `theme` (Light or dark): One of `system`, `dark`, `light`. Default `system`.
 - `deploymentTheme` (Use this server’s theme): `true` or `false`. Default `true`.
 - `saturation` (Saturation): Number from 0 to 2. Default `1`. Deployment only.

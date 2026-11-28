@@ -21,6 +21,10 @@
     "chatLookMessenger": "Messenger",
     "sections": "Listen",
     "sectionMenu": "Liste wechseln",
-    "createOrJoin": "Erstellen oder beitreten"
+    "createOrJoin": "Erstellen oder beitreten",
+    "chatLookMenu": "Listenmenü",
+    "chatLookMenuHint": "Wo das Menü zum Wechseln der Liste sitzt.",
+    "chatLookMenuTop": "Oben",
+    "chatLookMenuBottom": "Schwebend unten"
   }
 }

@@ -28,12 +28,15 @@
    * every list (home, rooms, direct messages, each space), much as Beeper's "Inbox" does.
    */
   interface Props {
-    title: string;
-    activeSpace: RoomListItemView | null;
+    /** The list's title; without it the menu names the list it finds itself. */
+    title?: string;
+    activeSpace?: RoomListItemView | null;
+    /** Floats as a pill at the bottom of the list, within reach of a thumb. */
+    floating?: boolean;
     onNavigate?: (href: string) => void;
   }
 
-  let { title, activeSpace, onNavigate }: Props = $props();
+  let { title, activeSpace, floating = false, onNavigate }: Props = $props();
 
   const roomList = useRoomList();
 
@@ -101,6 +104,8 @@
     )
   );
   let CurrentIcon = $derived(current?.icon);
+  let shownTitle = $derived(title ?? current?.label ?? i18n.t('zobel.sections'));
+  let shownSpace = $derived(activeSpace === undefined ? (current?.space ?? null) : activeSpace);
 
   const createEntries = [
     { href: resolve('create-room'), label: 'common.createRoom', icon: PlusIcon },
@@ -140,20 +145,28 @@
   </ActionMenuItem>
 {/snippet}
 
-<ActionMenu label={i18n.t('zobel.sectionMenu')} side="bottom" align="start">
+<ActionMenu
+  label={i18n.t('zobel.sectionMenu')}
+  side={floating ? 'top' : 'bottom'}
+  align={floating ? 'center' : 'start'}
+>
   {#snippet trigger({ props })}
-    <button {...props} type="button" class="zobel-section-switcher selection-open">
-      {#if activeSpace}
+    <button
+      {...props}
+      type="button"
+      class={['zobel-section-switcher selection-open', { floating }]}
+    >
+      {#if shownSpace}
         <Avatar
-          id={activeSpace.room_id}
-          src={activeSpace.display_avatar_url}
-          name={title}
+          id={shownSpace.room_id}
+          src={shownSpace.display_avatar_url}
+          name={shownTitle}
           size="small"
         />
       {:else if CurrentIcon}
         <CurrentIcon class="zobel-section-icon" />
       {/if}
-      <span class="zobel-section-title">{title}</span>
+      <span class="zobel-section-title">{shownTitle}</span>
       <CaretDownIcon class="zobel-section-caret" />
     </button>
   {/snippet}
@@ -195,6 +208,28 @@
     max-width: 100%;
     min-height: 2.5rem;
     padding: 0 var(--space-300) 0 var(--space-200);
+  }
+
+  .zobel-section-switcher.floating {
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--surface-container-line);
+    bottom: var(--space-400);
+    box-shadow: 0 var(--space-100) var(--space-400) rgb(0 0 0 / 30%);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-600);
+    inset-inline: 0;
+    margin-inline: auto;
+    max-width: calc(100% - 2 * var(--space-400));
+    min-height: 3rem;
+    padding-inline: var(--space-400);
+    position: absolute;
+    width: fit-content;
+    z-index: 2;
+  }
+
+  .zobel-section-switcher.floating:hover,
+  .zobel-section-switcher.floating[data-state='open'] {
+    background: var(--surface-container-hover);
   }
 
   .zobel-section-switcher:hover,

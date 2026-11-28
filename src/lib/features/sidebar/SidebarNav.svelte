@@ -40,7 +40,8 @@
   import { isActiveSpace, markRoomsRead } from './nav-rooms.js';
   import CoreHealthBanner from '#lib/ui/CoreHealthBanner.svelte';
   import AlertDrawer from './AlertDrawer.svelte';
-  import { messengerLook } from '#lib/zobel/chat-look.svelte.js';
+  import { listMenuAtBottom, messengerLook } from '#lib/zobel/chat-look.svelte.js';
+  import SectionSwitcher from '#lib/zobel/SectionSwitcher.svelte';
 
   interface Props {
     mobile?: boolean;
@@ -319,6 +320,9 @@
           {pinnedSpaceIds}
           onTogglePin={togglePin}
         />
+        {#if listMenuAtBottom()}
+          <SectionSwitcher floating {onNavigate} />
+        {/if}
       </div>
       {@render callBar()}
       <UserQuickTools mobile {onNavigate} />
@@ -354,6 +358,9 @@
           {pinnedSpaceIds}
           onTogglePin={togglePin}
         />
+        {#if listMenuAtBottom() && !collapsed}
+          <SectionSwitcher floating />
+        {/if}
         {#if !collapsed}
           <AlertDrawer />
         {/if}

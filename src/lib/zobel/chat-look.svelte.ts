@@ -13,6 +13,11 @@ export function messengerLook(): boolean {
   return preferences.chatLook === 'messenger';
 }
 
+/** Whether the messenger look's list menu floats at the bottom, within reach of a thumb. */
+export function listMenuAtBottom(): boolean {
+  return messengerLook() && preferences.chatLookMenu === 'bottom';
+}
+
 type PresetKey = 'layout' | 'alignOwnMessages' | 'messagePreviews';
 
 /**
@@ -55,6 +60,7 @@ export function trackChatLook(): void {
   const roomList = useRoomList();
   $effect(() => {
     document.documentElement.dataset.zobelLook = preferences.chatLook;
+    document.documentElement.dataset.zobelListMenu = listMenuAtBottom() ? 'bottom' : 'top';
   });
   $effect(() => {
     const room = findRoomByPathId(roomList.rooms, page.params.roomId);

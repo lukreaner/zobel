@@ -326,6 +326,14 @@
           ],
           "default": "sable"
         },
+        "chatLookMenu": {
+          "title": "List menu",
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
         "threadPresentation": {
           "title": "Threads and discussions",
           "enum": [
@@ -1901,6 +1909,14 @@
             "messenger"
           ],
           "default": "sable"
+        },
+        "chatLookMenu": {
+          "title": "List menu",
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
         },
         "threadPresentation": {
           "title": "Threads and discussions",
