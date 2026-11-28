@@ -35,6 +35,11 @@
       "zobel_lineart": "Line art",
       "zobel_pixel": "Pixel",
       "zobel_sable": "Sable"
-    }
+    },
+    "chatListStatus": "Show whether your last message was sent",
+    "chatListStatusHint": "In the chat list, a clock in front of your last message means it is still being sent, a tick that it has been sent. Shown where message previews are on.",
+    "chatListStatusTerms": "status, sent, sending, tick, check mark, delivery, chat list, message preview",
+    "messageSending": "Sending",
+    "messageSent": "Sent"
   }
 }

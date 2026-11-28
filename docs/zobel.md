@@ -85,6 +85,8 @@ lines, and a conflict there is resolved by keeping Zobel's line.
 | `src/lib/features/settings/AppIconSettings.svelte`                                     | Adds Zobel's icons to the app icon picker: previews, names and order from `src/lib/zobel/app-icons.ts`                                                                                     |
 | `src-tauri/gen/android/app/src/main/AndroidManifest.xml`                               | One launcher alias per Zobel icon, before Sable's (written by `scripts/zobel/app-icons.mjs`)                                                                                               |
 | `src/lib/features/search/SearchView.svelte`                                            | Calls `focusSearchWhenOpened` (`src/lib/zobel/search-focus.ts`)                                                                                                                            |
+| `src/lib/settings/definitions.ts`, `src/lib/settings/registry/sidebar.ts`              | Add the setting `chatListStatus` and list it under Sidebar, after message previews                                                                                                         |
+| `src/lib/features/sidebar/RoomRowText.svelte`                                          | Puts `src/lib/zobel/RowMessageStatus.svelte` in front of the message preview                                                                                                               |
 | `src/lib/config/config-reference.test.ts`                                              | Reads the names of Zobel's settings for those generated files                                                                                                                              |
 | Tests next to these files                                                              | Expect "Zobel" where they expected "Sable"                                                                                                                                                 |
 
@@ -181,6 +183,13 @@ in the table above.
   layout. `src/lib/zobel/search-focus.ts` focuses it on narrow screens too when search was opened
   by tapping a link, such as the search button in the chat list, so the keyboard comes up with it;
   coming back to search leaves it closed. Test: `tests/e2e/zobel-search-focus.spec.ts`.
+- **Status of your last message in the chat list.** With the setting `chatListStatus`
+  (Sidebar, off by default) `src/lib/zobel/RowMessageStatus.svelte` puts a clock in front of the
+  message preview while your last message is still being sent and a tick once it has been, from
+  the room list's `latest_event` (`own`, `sending`). Matrix has no "delivered" state. "Read" would
+  need the receipts of the other members, which Sable's core only reports for open timelines, so
+  it would take a change to the Rust core. Tests: `src/lib/zobel/RowMessageStatus.svelte.test.ts`
+  and `tests/e2e/zobel-list-status.spec.ts` (the clock only with `ZOBEL_E2E_HOMESERVER_PGID`).
 
 ## End-to-end tests without Docker
 
