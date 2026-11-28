@@ -79,6 +79,7 @@
     type SidebarThread,
   } from './thread-sidebar.svelte.js';
   import RoomVoiceLive from './RoomVoiceLive.svelte';
+  import { replacesOpenChat } from '#lib/zobel/room-history.svelte.js';
   import { messengerLook } from '#lib/zobel/chat-look.svelte.js';
   import RoomRowTime from '#lib/zobel/RoomRowTime.svelte';
   import { claimedRoomIds, markRoomsRead } from './nav-rooms.js';
@@ -642,6 +643,7 @@
             { unread: mentions > 0 || unread > 0 || marked },
           ]}
           {href}
+          data-sveltekit-replacestate={replacesOpenChat() ? 'true' : undefined}
           style:--room-depth={collapsed ? 0 : item.depth}
           onclick={() => onNavigate?.(href)}
           aria-label={collapsed
