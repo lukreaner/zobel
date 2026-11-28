@@ -532,7 +532,11 @@ object PushNotifier {
 
         var repeat = false
 
-        val direct = roomName.isEmpty() || notification.optBoolean(DIRECT_FLAG)
+        // Zobel: a push from the server does not say whether a chat is direct. A chat named after
+        // its sender, as bridges name theirs, is shown as one, not as a group of that name with
+        // the name and picture twice.
+        val direct = roomName.isEmpty() || notification.optBoolean(DIRECT_FLAG) ||
+            roomName.trim().equals(sender.trim(), ignoreCase = true)
         if (isInvite) {
             builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
         } else {

@@ -560,6 +560,16 @@ class PushNotifierTest {
     }
 
     @Test
+    fun show_aChatNamedAfterItsSenderIsShownAsDirect() {
+        // Zobel: bridged chats are named after the other person, and a cold push carries no direct flag.
+        PushNotifier.show(context, warmNotification("!bridged:example.org", "\$one", "hi").put("room_name", "Alice"))
+        val style = androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(
+            conversations().single().notification)!!
+        assertNull(style.conversationTitle)
+        assertFalse(style.isGroupConversation)
+    }
+
+    @Test
     fun show_aLineWithoutADisplayNameIsNeverTheReader() {
         val named = warmNotification("!room:example.org", "\$one", "hi")
         named.remove("sender_display_name")
