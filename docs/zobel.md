@@ -153,8 +153,10 @@ in the table above.
   `activity-alias` in the manifest, and choosing one enables its alias. Zobel adds eight icons of
   its own, listed in `src/lib/zobel/app-icons/icons.json` next to their SVG sources. The same SVGs
   are the previews in the picker. [`scripts/zobel/app-icons.mjs`](../scripts/zobel/app-icons.mjs)
-  runs the plugin's generator for Zobel's icons only, so Sable's resources stay untouched, and
-  writes the manifest's aliases with Zobel's before Sable's:
+  renders the SVGs with Playwright's Chromium (resvg, which `tauri icon` would use, draws their
+  noise and displacement filters differently), runs the plugin's generator on the result for
+  Zobel's icons only, so Sable's resources stay untouched, and writes the manifest's aliases with
+  Zobel's before Sable's:
 
   ```sh
   node scripts/zobel/app-icons.mjs   # then commit the manifest and the new files in res/mipmap-*

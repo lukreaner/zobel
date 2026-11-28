@@ -27,13 +27,13 @@
     "chatLookMenuTop": "At the top",
     "chatLookMenuBottom": "Floating at the bottom",
     "appIcons": {
-      "zobel_classic": "Zobel",
-      "zobel_night": "Zobel at night",
-      "zobel_snow": "Snow",
-      "zobel_forest": "Forest",
-      "zobel_sunset": "Sunset",
-      "zobel_neon": "Neon",
-      "zobel_chat": "Speech bubble",
+      "zobel_sticker": "Sticker",
+      "zobel_papercut": "Paper cut",
+      "zobel_linocut": "Linocut",
+      "zobel_watercolor": "Watercolour",
+      "zobel_riso": "Risograph",
+      "zobel_chalk": "Chalk",
+      "zobel_lineart": "Line art",
       "zobel_pixel": "Pixel"
     }
   }

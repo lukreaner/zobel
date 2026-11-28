@@ -1,44 +1,12 @@
 {
   "icons": [
-    {
-      "id": "zobel_classic",
-      "source": "classic.svg",
-      "backgroundColor": "#F2C46D"
-    },
-    {
-      "id": "zobel_night",
-      "source": "night.svg",
-      "backgroundColor": "#16224A"
-    },
-    {
-      "id": "zobel_snow",
-      "source": "snow.svg",
-      "backgroundColor": "#9FD0F0"
-    },
-    {
-      "id": "zobel_forest",
-      "source": "forest.svg",
-      "backgroundColor": "#2C6842"
-    },
-    {
-      "id": "zobel_sunset",
-      "source": "sunset.svg",
-      "backgroundColor": "#EE5D63"
-    },
-    {
-      "id": "zobel_neon",
-      "source": "neon.svg",
-      "backgroundColor": "#0B0B16"
-    },
-    {
-      "id": "zobel_chat",
-      "source": "chat.svg",
-      "backgroundColor": "#17A38A"
-    },
-    {
-      "id": "zobel_pixel",
-      "source": "pixel.svg",
-      "backgroundColor": "#7CC6E6"
-    }
+    { "id": "zobel_sticker", "source": "sticker.svg", "backgroundColor": "#C9B8EC" },
+    { "id": "zobel_papercut", "source": "papercut.svg", "backgroundColor": "#F6D9A8" },
+    { "id": "zobel_linocut", "source": "linocut.svg", "backgroundColor": "#EFE4CC" },
+    { "id": "zobel_watercolor", "source": "watercolor.svg", "backgroundColor": "#F7F2E8" },
+    { "id": "zobel_riso", "source": "riso.svg", "backgroundColor": "#F4EEE2" },
+    { "id": "zobel_chalk", "source": "chalk.svg", "backgroundColor": "#26372F" },
+    { "id": "zobel_lineart", "source": "lineart.svg", "backgroundColor": "#1F3A5F" },
+    { "id": "zobel_pixel", "source": "pixel.svg", "backgroundColor": "#8ED1C6" }
   ]
 }

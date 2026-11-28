@@ -23,8 +23,8 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation((command) => {
     // The plugin lists the icons sorted by ID.
     if (command === 'plugin:app-icon|get_available_icons')
-      return Promise.resolve(['pride', 'propeller', 'zobel_chat', 'zobel_night']);
-    if (command === 'plugin:app-icon|get_current_icon') return Promise.resolve('zobel_night');
+      return Promise.resolve(['pride', 'propeller', 'zobel_lineart', 'zobel_sticker']);
+    if (command === 'plugin:app-icon|get_current_icon') return Promise.resolve('zobel_sticker');
     return Promise.resolve(undefined);
   });
 });
@@ -39,8 +39,8 @@ test('Zobel has eight icons, each with a preview and a name', () => {
 });
 
 test("Zobel's icons come first, in their own order", () => {
-  expect(zobelAppIconsFirst(['cuba', 'zobel_pixel', 'pride', 'zobel_classic'])).toEqual([
-    'zobel_classic',
+  expect(zobelAppIconsFirst(['cuba', 'zobel_pixel', 'pride', 'zobel_sticker'])).toEqual([
+    'zobel_sticker',
     'zobel_pixel',
     'cuba',
     'pride',
@@ -50,7 +50,7 @@ test("Zobel's icons come first, in their own order", () => {
 test("the app icon picker offers Zobel's icons after the default, with pictures and names", async () => {
   render(AppIconSettings);
   const trigger = await screen.findByRole('combobox', { name: 'App icon' });
-  expect(trigger).toHaveTextContent('Zobel at night');
+  expect(trigger).toHaveTextContent('Sticker');
 
   await userEvent.setup().click(trigger);
   await vi.waitFor(() => {
@@ -59,8 +59,8 @@ test("the app icon picker offers Zobel's icons after the default, with pictures 
   const choices = screen.getAllByRole('option');
   expect(choices.map((choice) => choice.textContent.trim())).toEqual([
     'Default',
-    'Zobel at night',
-    'Speech bubble',
+    'Sticker',
+    'Line art',
     'Pride',
     'Propeller',
   ]);
@@ -69,7 +69,7 @@ test("the app icon picker offers Zobel's icons after the default, with pictures 
   await userEvent.setup().click(choices[2]);
   await vi.waitFor(() => {
     expect(invoke).toHaveBeenCalledWith('plugin:app-icon|set_icon', {
-      request: { icon: 'zobel_chat' },
+      request: { icon: 'zobel_lineart' },
     });
   });
 });

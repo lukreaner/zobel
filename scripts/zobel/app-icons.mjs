@@ -4,6 +4,7 @@
 //
 //   node scripts/zobel/app-icons.mjs
 //
+// Needs Playwright's Chromium (`pnpm exec playwright install chromium`) to render the SVGs.
 // It uses the generator of tauri-plugin-app-icon, the plugin Sable switches icons with, at the
 // revision src-tauri/Cargo.toml pins. The generator writes the resources of Zobel's icons only,
 // so Sable's stay byte for byte as Sable committed them, and the manifest gets one launcher alias
@@ -67,9 +68,37 @@ const zobelIcons = zobel.icons.map((icon) => ({
   source: resolve(dirname(zobelConfigPath), icon.source),
 }));
 
+/**
+ * Renders each SVG to a PNG with Chromium. `tauri icon` would render the SVGs itself with resvg,
+ * whose noise and displacement filters come out unlike the browser's, and the picker shows the
+ * SVGs in the WebView, that is in Chromium.
+ */
+async function renderWithChromium(icons, directory) {
+  const { chromium } = await import('@playwright/test');
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1024, height: 1024 } });
+    const rendered = [];
+    for (const icon of icons) {
+      const png = join(directory, `${icon.id}.png`);
+      const svg = readFileSync(icon.source, 'utf8').replace(
+        '<svg ',
+        '<svg width="1024" height="1024" '
+      );
+      await page.setContent(`<body style="margin:0">${svg}</body>`);
+      await page.screenshot({ path: png, omitBackground: true });
+      rendered.push({ ...icon, source: png });
+    }
+    return rendered;
+  } finally {
+    await browser.close();
+  }
+}
+
 const temporary = mkdtempSync(join(tmpdir(), 'zobel-app-icons-'));
 try {
   const plugin = pluginDirectory(temporary);
+  const rendered = await renderWithChromium(zobelIcons, temporary);
 
   // The generator also rewrites the manifest; let it write a copy, and write the real one below
   // with every icon, so Sable's aliases stay.
@@ -78,7 +107,7 @@ try {
   const config = join(temporary, 'app-icons.json');
   writeFileSync(
     config,
-    JSON.stringify({ android: { ...android, manifest: scratchManifest }, icons: zobelIcons })
+    JSON.stringify({ android: { ...android, manifest: scratchManifest }, icons: rendered })
   );
   // `tauri icon` resolves from this repository's dependencies.
   run(process.execPath, [join(plugin, 'scripts/generate-android.mjs'), '--config', config], {

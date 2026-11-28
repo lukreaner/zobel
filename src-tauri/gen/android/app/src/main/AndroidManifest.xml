@@ -158,15 +158,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelClassic"
+            android:name=".AppIconZobelSticker"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_classic"
-            android:roundIcon="@mipmap/ic_launcher_zobel_classic"
+            android:icon="@mipmap/ic_launcher_zobel_sticker"
+            android:roundIcon="@mipmap/ic_launcher_zobel_sticker"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_classic" />
+                android:value="zobel_sticker" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -178,15 +178,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelNight"
+            android:name=".AppIconZobelPapercut"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_night"
-            android:roundIcon="@mipmap/ic_launcher_zobel_night"
+            android:icon="@mipmap/ic_launcher_zobel_papercut"
+            android:roundIcon="@mipmap/ic_launcher_zobel_papercut"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_night" />
+                android:value="zobel_papercut" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -198,15 +198,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelSnow"
+            android:name=".AppIconZobelLinocut"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_snow"
-            android:roundIcon="@mipmap/ic_launcher_zobel_snow"
+            android:icon="@mipmap/ic_launcher_zobel_linocut"
+            android:roundIcon="@mipmap/ic_launcher_zobel_linocut"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_snow" />
+                android:value="zobel_linocut" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -218,15 +218,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelForest"
+            android:name=".AppIconZobelWatercolor"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_forest"
-            android:roundIcon="@mipmap/ic_launcher_zobel_forest"
+            android:icon="@mipmap/ic_launcher_zobel_watercolor"
+            android:roundIcon="@mipmap/ic_launcher_zobel_watercolor"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_forest" />
+                android:value="zobel_watercolor" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -238,15 +238,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelSunset"
+            android:name=".AppIconZobelRiso"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_sunset"
-            android:roundIcon="@mipmap/ic_launcher_zobel_sunset"
+            android:icon="@mipmap/ic_launcher_zobel_riso"
+            android:roundIcon="@mipmap/ic_launcher_zobel_riso"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_sunset" />
+                android:value="zobel_riso" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -258,15 +258,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelNeon"
+            android:name=".AppIconZobelChalk"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_neon"
-            android:roundIcon="@mipmap/ic_launcher_zobel_neon"
+            android:icon="@mipmap/ic_launcher_zobel_chalk"
+            android:roundIcon="@mipmap/ic_launcher_zobel_chalk"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_neon" />
+                android:value="zobel_chalk" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -278,15 +278,15 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".AppIconZobelChat"
+            android:name=".AppIconZobelLineart"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/ic_launcher_zobel_chat"
-            android:roundIcon="@mipmap/ic_launcher_zobel_chat"
+            android:icon="@mipmap/ic_launcher_zobel_lineart"
+            android:roundIcon="@mipmap/ic_launcher_zobel_lineart"
             android:enabled="false"
             android:exported="true">
             <meta-data
                 android:name="tauri-plugin-app-icon-id"
-                android:value="zobel_chat" />
+                android:value="zobel_lineart" />
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />

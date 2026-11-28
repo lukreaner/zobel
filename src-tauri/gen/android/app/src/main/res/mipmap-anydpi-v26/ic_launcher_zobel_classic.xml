@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-  <foreground>
-    <inset android:drawable="@mipmap/ic_launcher_zobel_classic_foreground" android:inset="16.5%" />
-  </foreground>
-  <background>
-    <color android:color="#F2C46D"/>
-  </background>
-</adaptive-icon>
